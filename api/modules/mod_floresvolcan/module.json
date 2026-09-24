@@ -1,0 +1,229 @@
+{
+  "key": "mod_floresvolcan",
+  "name": "FloresVolcan",
+  "version": "0.5.1",
+  "module_type": "industry",
+  "description": "ERP florícola configurable. Lirios con SAP normalizado por variedad/calibre, compras en unidad comercial, recepción a inventario físico, flujo compatible con Excel, respaldos y analítica gerencial.",
+  "icon": "i-lucide-flower-2",
+  "home_path": "/floresvolcan",
+  "roles": [
+    {
+      "key": "admin",
+      "label": "Administrador"
+    },
+    {
+      "key": "gerente",
+      "label": "Gerente"
+    },
+    {
+      "key": "operario",
+      "label": "Operación / Operario"
+    },
+    {
+      "key": "trabajador",
+      "label": "Trabajador de campo"
+    }
+  ],
+  "permissions": [
+    "floresvolcan:dashboard:view",
+    "floresvolcan:suppliers:view",
+    "floresvolcan:suppliers:manage",
+    "floresvolcan:sap:view",
+    "floresvolcan:sap:manage",
+    "floresvolcan:purchases:view",
+    "floresvolcan:purchases:create",
+    "floresvolcan:purchases:update",
+    "floresvolcan:purchases:approve",
+    "floresvolcan:inventory:view",
+    "floresvolcan:inventory:receive",
+    "floresvolcan:inventory:manage",
+    "floresvolcan:inventory:writeoff",
+    "floresvolcan:workers:view",
+    "floresvolcan:workers:manage",
+    "floresvolcan:spaces:view",
+    "floresvolcan:spaces:manage",
+    "floresvolcan:planting:view",
+    "floresvolcan:planting:manage",
+    "floresvolcan:planting:approve",
+    "floresvolcan:planting:register",
+    "floresvolcan:requisitions:view",
+    "floresvolcan:requisitions:create",
+    "floresvolcan:requisitions:approve",
+    "floresvolcan:harvest:register",
+    "floresvolcan:technical_close:execute",
+    "floresvolcan:field:use",
+    "floresvolcan:ai:use",
+    "floresvolcan:lilies:view",
+    "floresvolcan:config:view",
+    "floresvolcan:config:manage",
+    "floresvolcan:exports:use",
+    "floresvolcan:backup:manage"
+  ],
+  "role_permissions": {
+    "admin": [
+      "floresvolcan:dashboard:view",
+      "floresvolcan:suppliers:view",
+      "floresvolcan:suppliers:manage",
+      "floresvolcan:sap:view",
+      "floresvolcan:sap:manage",
+      "floresvolcan:purchases:view",
+      "floresvolcan:purchases:create",
+      "floresvolcan:purchases:update",
+      "floresvolcan:purchases:approve",
+      "floresvolcan:inventory:view",
+      "floresvolcan:inventory:receive",
+      "floresvolcan:inventory:manage",
+      "floresvolcan:inventory:writeoff",
+      "floresvolcan:workers:view",
+      "floresvolcan:workers:manage",
+      "floresvolcan:spaces:view",
+      "floresvolcan:spaces:manage",
+      "floresvolcan:planting:view",
+      "floresvolcan:planting:manage",
+      "floresvolcan:planting:approve",
+      "floresvolcan:planting:register",
+      "floresvolcan:requisitions:view",
+      "floresvolcan:requisitions:create",
+      "floresvolcan:requisitions:approve",
+      "floresvolcan:harvest:register",
+      "floresvolcan:technical_close:execute",
+      "floresvolcan:ai:use",
+      "floresvolcan:lilies:view",
+      "floresvolcan:config:view",
+      "floresvolcan:config:manage",
+      "floresvolcan:exports:use",
+      "floresvolcan:backup:manage"
+    ],
+    "gerente": [
+      "floresvolcan:dashboard:view",
+      "floresvolcan:suppliers:view",
+      "floresvolcan:suppliers:manage",
+      "floresvolcan:sap:view",
+      "floresvolcan:purchases:view",
+      "floresvolcan:purchases:create",
+      "floresvolcan:purchases:update",
+      "floresvolcan:purchases:approve",
+      "floresvolcan:inventory:view",
+      "floresvolcan:inventory:receive",
+      "floresvolcan:inventory:manage",
+      "floresvolcan:inventory:writeoff",
+      "floresvolcan:workers:view",
+      "floresvolcan:workers:manage",
+      "floresvolcan:spaces:view",
+      "floresvolcan:spaces:manage",
+      "floresvolcan:planting:view",
+      "floresvolcan:planting:manage",
+      "floresvolcan:planting:approve",
+      "floresvolcan:planting:register",
+      "floresvolcan:requisitions:view",
+      "floresvolcan:requisitions:create",
+      "floresvolcan:requisitions:approve",
+      "floresvolcan:harvest:register",
+      "floresvolcan:technical_close:execute",
+      "floresvolcan:ai:use",
+      "floresvolcan:lilies:view",
+      "floresvolcan:config:view",
+      "floresvolcan:config:manage",
+      "floresvolcan:exports:use",
+      "floresvolcan:backup:manage"
+    ],
+    "operario": [
+      "floresvolcan:dashboard:view",
+      "floresvolcan:purchases:view",
+      "floresvolcan:purchases:create",
+      "floresvolcan:purchases:update",
+      "floresvolcan:lilies:view"
+    ],
+    "trabajador": [
+      "floresvolcan:field:use",
+      "floresvolcan:planting:register",
+      "floresvolcan:harvest:register",
+      "floresvolcan:ai:use"
+    ]
+  },
+  "navigation": [
+    {
+      "group": "FloresVolcan",
+      "label": "Panel gerencial",
+      "to": "/floresvolcan",
+      "icon": "i-lucide-layout-dashboard",
+      "permission": "floresvolcan:dashboard:view"
+    },
+    {
+      "group": "Lirios",
+      "label": "Centro Lirios",
+      "to": "/floresvolcan/lirios",
+      "icon": "i-lucide-flower-2",
+      "permission": "floresvolcan:lilies:view"
+    },
+    {
+      "group": "Lirios",
+      "label": "Entradas / inventario",
+      "to": "/floresvolcan/inventario",
+      "icon": "i-lucide-snowflake",
+      "permission": "floresvolcan:inventory:view"
+    },
+    {
+      "group": "Lirios",
+      "label": "Siembra y requisiciones",
+      "to": "/floresvolcan/produccion",
+      "icon": "i-lucide-sprout",
+      "permission": "floresvolcan:planting:view"
+    },
+    {
+      "group": "Lirios",
+      "label": "App de campo",
+      "to": "/floresvolcan/campo",
+      "icon": "i-lucide-smartphone",
+      "permission": "floresvolcan:field:use"
+    },
+    {
+      "group": "Compras",
+      "label": "Órdenes de compra",
+      "to": "/floresvolcan/compras",
+      "icon": "i-lucide-shopping-cart",
+      "permission": "floresvolcan:purchases:view"
+    },
+    {
+      "group": "Compras",
+      "label": "Proveedores",
+      "to": "/floresvolcan/proveedores",
+      "icon": "i-lucide-building-2",
+      "permission": "floresvolcan:suppliers:view"
+    },
+    {
+      "group": "Operación",
+      "label": "Espacios productivos",
+      "to": "/floresvolcan/espacios",
+      "icon": "i-lucide-map-pinned",
+      "permission": "floresvolcan:spaces:view"
+    },
+    {
+      "group": "Operación",
+      "label": "Trabajadores",
+      "to": "/floresvolcan/trabajadores",
+      "icon": "i-lucide-users",
+      "permission": "floresvolcan:workers:view"
+    },
+    {
+      "group": "Configuración",
+      "label": "Catálogo SAP",
+      "to": "/floresvolcan/sap",
+      "icon": "i-lucide-barcode",
+      "permission": "floresvolcan:sap:view"
+    },
+    {
+      "group": "Configuración",
+      "label": "Lirios y respaldos",
+      "to": "/floresvolcan/configuracion",
+      "icon": "i-lucide-settings-2",
+      "permission": "floresvolcan:config:view"
+    }
+  ],
+  "route_prefixes": [
+    "/floresvolcan"
+  ],
+  "public_route_prefixes": [],
+  "module_api_version": 1,
+  "minimum_core_api_version": 1
+}

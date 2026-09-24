@@ -1,0 +1,87 @@
+# ==========================================
+# RuralIA Backend - Python / FastAPI
+# ==========================================
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Logs
+*.log
+logs/
+
+# Databases / local data
+*.db
+*.sqlite
+*.sqlite3
+
+# Runtime files
+*.pid
+*.sock
+
+# Uploads / generated files
+uploads/
+tmp/
+temp/
+
+# Backups
+backup/
+backups/
+*.bak
+*.backup
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker local overrides
+docker-compose.override.yml
+
+# Certificates / keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# SSH
+id_rsa
+id_ed25519
+
+# Local secrets
+secrets/

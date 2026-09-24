@@ -1,0 +1,89 @@
+{
+  "key": "mod_gestionfv",
+  "name": "GestiónFV",
+  "version": "0.1.0",
+  "module_type": "industry",
+  "description": "Base modular para producción, poscosecha, calidad y exportación de flores.",
+  "icon": "i-lucide-flower-2",
+  "entrypoint": "modules.mod_gestionfv.router:router",
+  "home_path": "/gestionfv",
+  "roles": [
+    {
+      "key": "gerente_fv",
+      "label": "Gerencia florícola"
+    },
+    {
+      "key": "produccion_fv",
+      "label": "Producción"
+    },
+    {
+      "key": "calidad_fv",
+      "label": "Calidad"
+    },
+    {
+      "key": "exportacion_fv",
+      "label": "Exportación"
+    }
+  ],
+  "permissions": [
+    "gestionfv:dashboard:view",
+    "gestionfv:produccion:view",
+    "gestionfv:produccion:manage",
+    "gestionfv:calidad:view",
+    "gestionfv:calidad:manage",
+    "gestionfv:exportacion:view",
+    "gestionfv:exportacion:manage"
+  ],
+  "role_permissions": {
+    "gerente": [
+      "gestionfv:dashboard:view",
+      "gestionfv:produccion:view",
+      "gestionfv:produccion:manage",
+      "gestionfv:calidad:view",
+      "gestionfv:calidad:manage",
+      "gestionfv:exportacion:view",
+      "gestionfv:exportacion:manage"
+    ],
+    "gerente_fv": [
+      "gestionfv:dashboard:view",
+      "gestionfv:produccion:view",
+      "gestionfv:produccion:manage",
+      "gestionfv:calidad:view",
+      "gestionfv:calidad:manage",
+      "gestionfv:exportacion:view",
+      "gestionfv:exportacion:manage"
+    ],
+    "produccion_fv": [
+      "gestionfv:dashboard:view",
+      "gestionfv:produccion:view",
+      "gestionfv:produccion:manage",
+      "gestionfv:calidad:view"
+    ],
+    "calidad_fv": [
+      "gestionfv:dashboard:view",
+      "gestionfv:produccion:view",
+      "gestionfv:calidad:view",
+      "gestionfv:calidad:manage"
+    ],
+    "exportacion_fv": [
+      "gestionfv:dashboard:view",
+      "gestionfv:calidad:view",
+      "gestionfv:exportacion:view",
+      "gestionfv:exportacion:manage"
+    ]
+  },
+  "navigation": [
+    {
+      "group": "GestiónFV",
+      "label": "Inicio Florícola",
+      "to": "/gestionfv",
+      "icon": "i-lucide-flower-2",
+      "permission": "gestionfv:dashboard:view",
+      "training_id": "nav-gestionfv-home"
+    }
+  ],
+  "route_prefixes": [
+    "/gestionfv"
+  ],
+  "public_route_prefixes": []
+}

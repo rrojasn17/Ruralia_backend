@@ -1,0 +1,1 @@
+"""FloresVolcan industry module."""

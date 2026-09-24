@@ -1,0 +1,269 @@
+{
+  "key": "mod_caficultura",
+  "name": "Caficultura",
+  "version": "1.5.0",
+  "module_type": "industry",
+  "description": "Gestión de fincas cafetaleras, insumos, recibos, lotes, trazabilidad y ventas.",
+  "icon": "i-lucide-coffee",
+  "entrypoint": "modules.mod_caficultura.router:router",
+  "roles": [
+    {
+      "key": "admin",
+      "label": "Administrador"
+    },
+    {
+      "key": "gerente",
+      "label": "Gerente"
+    },
+    {
+      "key": "operario",
+      "label": "Operario"
+    },
+    {
+      "key": "administrativo",
+      "label": "Administrativo"
+    },
+    {
+      "key": "supervisor_finca",
+      "label": "Supervisor de finca"
+    }
+  ],
+  "permissions": [
+    "dashboard:view",
+    "clientes:view",
+    "clientes:create",
+    "clientes:update",
+    "fincas:view",
+    "fincas:create",
+    "fincas:update",
+    "recibos:view",
+    "recibos:create",
+    "recibos:update",
+    "ot:view",
+    "ot:followup",
+    "gestionfincas:view",
+    "gestionfincas:create",
+    "gestionfincas:update",
+    "insumos:view",
+    "ventas:view",
+    "ventas:manage",
+    "ai:view",
+    "offline:sync",
+    "caficultura:config:manage",
+    "proveedores:view",
+    "proveedores:manage",
+    "clientes:delete",
+    "fincas:delete"
+  ],
+  "role_permissions": {
+    "gerente": [
+      "dashboard:view",
+      "clientes:view",
+      "clientes:create",
+      "clientes:update",
+      "fincas:view",
+      "fincas:create",
+      "fincas:update",
+      "recibos:view",
+      "recibos:create",
+      "recibos:update",
+      "ot:view",
+      "ot:followup",
+      "gestionfincas:view",
+      "gestionfincas:create",
+      "gestionfincas:update",
+      "insumos:view",
+      "ventas:view",
+      "ventas:manage",
+      "ai:view",
+      "offline:sync",
+      "caficultura:config:manage",
+      "proveedores:view",
+      "clientes:delete",
+      "fincas:delete",
+      "proveedores:manage"
+    ],
+    "operario": [
+      "dashboard:view",
+      "clientes:view",
+      "fincas:view",
+      "recibos:view",
+      "recibos:create",
+      "ot:view",
+      "ot:followup",
+      "offline:sync",
+      "insumos:view"
+    ],
+    "administrativo": [
+      "dashboard:view",
+      "clientes:view",
+      "fincas:view",
+      "recibos:view",
+      "recibos:create",
+      "recibos:update",
+      "ot:view",
+      "gestionfincas:view",
+      "gestionfincas:create",
+      "gestionfincas:update",
+      "insumos:view",
+      "ventas:view",
+      "offline:sync",
+      "proveedores:view",
+      "proveedores:manage",
+      "caficultura:config:manage"
+    ],
+    "supervisor_finca": [
+      "dashboard:view",
+      "clientes:view",
+      "fincas:view",
+      "gestionfincas:view",
+      "gestionfincas:create",
+      "gestionfincas:update",
+      "insumos:view",
+      "offline:sync"
+    ],
+    "admin": [
+      "dashboard:view",
+      "clientes:view",
+      "clientes:create",
+      "clientes:update",
+      "fincas:view",
+      "fincas:create",
+      "fincas:update",
+      "recibos:view",
+      "recibos:create",
+      "recibos:update",
+      "ot:view",
+      "ot:followup",
+      "gestionfincas:view",
+      "gestionfincas:create",
+      "gestionfincas:update",
+      "insumos:view",
+      "ventas:view",
+      "ventas:manage",
+      "ai:view",
+      "offline:sync",
+      "caficultura:config:manage",
+      "proveedores:view",
+      "proveedores:manage",
+      "clientes:delete",
+      "fincas:delete"
+    ]
+  },
+  "navigation": [
+    {
+      "group": "Beneficiado",
+      "label": "Recibos",
+      "to": "/recibos",
+      "icon": "i-lucide-receipt",
+      "permission": "recibos:view",
+      "training_id": "nav-receipts"
+    },
+    {
+      "group": "Beneficiado",
+      "label": "Solicitud Venta",
+      "to": "/solicitudes-venta",
+      "icon": "i-lucide-hand-coins",
+      "permission": "ventas:view",
+      "training_id": "nav-sales"
+    },
+    {
+      "group": "Beneficiado",
+      "label": "Lotes",
+      "to": "/ot",
+      "icon": "i-lucide-git-branch",
+      "permission": "ot:view",
+      "training_id": "nav-lots"
+    },
+    {
+      "group": "Beneficiado",
+      "label": "Lotes Aprobados",
+      "to": "/lotes-aprobados",
+      "icon": "i-lucide-badge-check",
+      "permission": "ventas:view",
+      "training_id": "nav-approved-lots"
+    },
+    {
+      "group": "Beneficiado",
+      "label": "Lotes Vendidos",
+      "to": "/lotes-vendidos",
+      "icon": "i-lucide-truck",
+      "permission": "ventas:view",
+      "training_id": "nav-sold-lots"
+    },
+    {
+      "group": "Finca",
+      "label": "Gestión fincas",
+      "to": "/gestionfincas",
+      "icon": "i-lucide-tractor",
+      "permission": "gestionfincas:view",
+      "training_id": "nav-farm-management"
+    },
+    {
+      "group": "Gestión",
+      "label": "Consultoría IA",
+      "to": "/iaconsulting",
+      "icon": "i-lucide-bot",
+      "permission": "ai:view",
+      "training_id": "nav-ai"
+    },
+    {
+      "group": "Gestión",
+      "label": "Clientes",
+      "to": "/clientes",
+      "icon": "i-lucide-contact",
+      "permission": "clientes:view",
+      "training_id": "nav-customers"
+    },
+    {
+      "group": "Gestión",
+      "label": "Proveedores",
+      "to": "/proveedores",
+      "icon": "i-lucide-building-2",
+      "permission": "proveedores:view",
+      "training_id": "nav-suppliers"
+    },
+    {
+      "group": "Gestión",
+      "label": "Insumos",
+      "to": "/insumos",
+      "icon": "i-lucide-package",
+      "permission": "insumos:view",
+      "training_id": "nav-supplies"
+    },
+    {
+      "group": "Administración módulo",
+      "label": "Configuración Caficultura",
+      "to": "/caficultura/configuracion",
+      "icon": "i-lucide-sliders-horizontal",
+      "permission": "caficultura:config:manage",
+      "training_id": "nav-caficultura-settings"
+    }
+  ],
+  "route_prefixes": [
+    "/clientes",
+    "/fincas",
+    "/gestionfincas",
+    "/recibos",
+    "/portal-recibos",
+    "/ot",
+    "/lotes-aprobados",
+    "/lotes-vendidos",
+    "/solicitudes-venta",
+    "/trazabilidad",
+    "/iaconsulting",
+    "/insumos",
+    "/admin/procesos",
+    "/admin/recibos",
+    "/admin/solicitudes-venta",
+    "/caficultura",
+    "/proveedores"
+  ],
+  "home_path": "/dashboard",
+  "public_route_prefixes": [
+    "/trazabilidad",
+    "/portal-recibos"
+  ],
+  "module_api_version": 1,
+  "minimum_core_api_version": 1
+}
