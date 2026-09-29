@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import unicodedata
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from typing import Any
 
@@ -11,6 +11,9 @@ from sqlalchemy.orm import Session
 
 from modules.mod_caficultura.models import (
     Cliente,
+    CompraInsumoFactura,
+    CompraInsumoLinea,
+    ActividadFinca,
     Finca,
     InsumoFinca,
     OrdenTrabajo,
@@ -26,6 +29,7 @@ from modules.mod_caficultura.models import (
     TrabajadorFinca,
 )
 from modules.mod_caficultura.model_notifications import NotificationEvent
+from modules.mod_caficultura.model_iot import IoTNode, IoTReading
 from core.models import Usuario
 
 
@@ -39,6 +43,8 @@ METRIC_OPTIONS = [
     {"value": "lot_qr", "label": "QR de lote vendido"},
     {"value": "lot_status", "label": "Estado integral de un lote"},
     {"value": "farm_activity", "label": "Actividad y costos de finca"},
+    {"value": "days_since_fertilization", "label": "Días desde última fertilización"},
+    {"value": "farm_sensor_analysis", "label": "Humedad ambiental por sensores"},
     {"value": "inventory_status", "label": "Inventario de insumos"},
     {"value": "sales_summary", "label": "Resumen de ventas"},
     {"value": "business_overview", "label": "Resumen general del negocio"},
@@ -130,6 +136,146 @@ def resolve_client(db: Session, query: str) -> dict[str, Any]:
 def resolve_farm(db: Session, query: str) -> dict[str, Any]:
     rows = db.query(Finca).filter(Finca.activa.is_(True)).order_by(Finca.nombre).limit(1000).all()
     return _resolve_named(rows, query, ("nombre", "codigo", "propietario"), "la finca")
+
+
+def days_since_fertilization(db: Session, parameters: dict[str, Any]) -> dict[str, Any]:
+    farm_name = str(parameters.get("farm_name") or parameters.get("finca") or "").strip()
+    resolved = resolve_farm(db, farm_name)
+    if not resolved.get("ok"):
+        return resolved
+    farm: Finca = resolved["row"]
+    fertilization_activity = or_(
+        func.lower(ActividadFinca.tipo).like("%fertiliz%"),
+        func.lower(ActividadFinca.tipo).like("%abon%"),
+        func.lower(ActividadFinca.nombre).like("%fertiliz%"),
+        func.lower(ActividadFinca.nombre).like("%abon%"),
+    )
+    last_date = (
+        db.query(func.max(RegistroFinca.fecha))
+        .join(ActividadFinca, ActividadFinca.id == RegistroFinca.actividad_id)
+        .filter(RegistroFinca.finca_id == farm.id, fertilization_activity)
+        .scalar()
+    )
+    baseline = last_date or (farm.created_at.date() if farm.created_at else date.today())
+    days = max((date.today() - baseline).days, 0)
+    return {
+        "ok": True,
+        "metric": "days_since_fertilization",
+        "farm": {"id": farm.id, "name": farm.nombre},
+        "last_fertilization_date": last_date.isoformat() if last_date else None,
+        "baseline": "last_fertilization" if last_date else "farm_created_at",
+        "days_without_fertilization": days,
+        "primary_value": days,
+        "unit": "days",
+        "summary": (
+            f"La finca {farm.nombre} lleva {days} días desde la última fertilización registrada."
+            if last_date
+            else f"La finca {farm.nombre} no tiene fertilizaciones registradas; se cuentan {days} días desde su creación."
+        ),
+    }
+
+
+def farm_sensor_analysis(db: Session, parameters: dict[str, Any]) -> dict[str, Any]:
+    farm_name = str(parameters.get("farm_name") or parameters.get("finca") or "").strip()
+    resolved = resolve_farm(db, farm_name)
+    if not resolved.get("ok"):
+        return resolved
+    farm: Finca = resolved["row"]
+    hours = min(max(int(parameters.get("hours") or 24), 1), 168)
+    humidity_threshold = min(max(float(parameters.get("humidity_threshold") or 85), 0), 100)
+    max_gap_hours = min(max(float(parameters.get("max_gap_hours") or 2), 0.25), 6)
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(hours=hours)
+    rows = (
+        db.query(IoTNode.id, IoTNode.nombre, IoTReading.recorded_at, IoTReading.data)
+        .join(IoTReading, IoTReading.node_id == IoTNode.id)
+        .filter(
+            IoTNode.finca_id == farm.id,
+            IoTNode.activo.is_(True),
+            IoTReading.recorded_at >= start,
+            IoTReading.recorded_at <= now,
+        )
+        .order_by(IoTReading.recorded_at.asc(), IoTReading.id.asc())
+        .limit(5000)
+        .all()
+    )
+
+    node_samples: dict[int, list[dict[str, Any]]] = {}
+    for node_id, node_name, recorded_at, raw_values in rows:
+        values = raw_values if isinstance(raw_values, dict) else {}
+        humidity_values = []
+        for key, value in values.items():
+            normalized = _norm(key).replace("_", "").replace("-", "")
+            if "humed" not in normalized and "humidity" not in normalized:
+                continue
+            if "suelo" in normalized or "soil" in normalized:
+                continue
+            try:
+                humidity_values.append(float(value))
+            except (TypeError, ValueError):
+                continue
+        if not humidity_values:
+            continue
+        timestamp = recorded_at.replace(tzinfo=timezone.utc) if recorded_at.tzinfo is None else recorded_at.astimezone(timezone.utc)
+        node_samples.setdefault(node_id, []).append({
+            "node": node_name,
+            "recorded_at": timestamp,
+            "humidity": max(humidity_values),
+        })
+
+    current_streak_hours = 0.0
+    latest_reading_at: datetime | None = None
+    latest_humidity: float | None = None
+    samples: list[dict[str, Any]] = []
+    max_gap = timedelta(hours=max_gap_hours)
+    for readings in node_samples.values():
+        streak_start: datetime | None = None
+        previous_at: datetime | None = None
+        streak_hours = 0.0
+        for reading in readings:
+            timestamp = reading["recorded_at"]
+            humidity = reading["humidity"]
+            samples.append({
+                "node": reading["node"],
+                "recorded_at": timestamp.isoformat(),
+                "relative_humidity": round(humidity, 2),
+            })
+            if latest_reading_at is None or timestamp > latest_reading_at:
+                latest_reading_at = timestamp
+                latest_humidity = humidity
+            if humidity <= humidity_threshold:
+                streak_start = None
+                previous_at = None
+                streak_hours = 0.0
+                continue
+            if streak_start is None or previous_at is None or timestamp - previous_at > max_gap:
+                streak_start = timestamp
+            previous_at = timestamp
+            streak_hours = max((timestamp - streak_start).total_seconds() / 3600, 0.0)
+        if previous_at and now - previous_at <= max_gap:
+            current_streak_hours = max(current_streak_hours, streak_hours)
+
+    samples.sort(key=lambda item: item["recorded_at"], reverse=True)
+    return {
+        "ok": True,
+        "metric": "farm_sensor_analysis",
+        "farm": {"id": farm.id, "name": farm.nombre},
+        "period_hours": hours,
+        "humidity_threshold": humidity_threshold,
+        "max_sample_gap_hours": max_gap_hours,
+        "current_consecutive_high_humidity_hours": round(current_streak_hours, 2),
+        "latest_reading_at": latest_reading_at.isoformat() if latest_reading_at else None,
+        "latest_relative_humidity": round(latest_humidity, 2) if latest_humidity is not None else None,
+        "sample_count": len(samples),
+        "samples": samples[:30],
+        "primary_value": round(current_streak_hours, 2),
+        "unit": "hours",
+        "summary": (
+            f"La finca {farm.nombre} registra {current_streak_hours:.2f} horas consecutivas con humedad relativa superior a {humidity_threshold:g}%."
+            if samples
+            else f"No hay lecturas recientes de humedad relativa para la finca {farm.nombre} en las últimas {hours} horas."
+        ),
+    }
 
 
 def resolve_worker(db: Session, query: str) -> dict[str, Any]:
@@ -605,6 +751,36 @@ def farm_activity(db: Session, parameters: dict[str, Any]) -> dict[str, Any]:
 
 def inventory_status(db: Session, _: dict[str, Any]) -> dict[str, Any]:
     rows = db.query(InsumoFinca).filter(InsumoFinca.activo.is_(True)).order_by(InsumoFinca.nombre).all()
+    # Latest recorded purchase per supply, including date/currency as evidence.
+    ranked = db.query(
+        CompraInsumoLinea.id.label("line_id"),
+        func.row_number().over(
+            partition_by=CompraInsumoLinea.insumo_id,
+            order_by=(CompraInsumoFactura.fecha.desc(), CompraInsumoLinea.id.desc()),
+        ).label("position"),
+    ).join(CompraInsumoFactura, CompraInsumoFactura.id == CompraInsumoLinea.factura_id).subquery()
+    purchases = db.query(CompraInsumoLinea, CompraInsumoFactura).join(
+        CompraInsumoFactura, CompraInsumoFactura.id == CompraInsumoLinea.factura_id,
+    ).join(ranked, ranked.c.line_id == CompraInsumoLinea.id).filter(ranked.c.position == 1).all()
+    latest = {line.insumo_id: (line, invoice) for line, invoice in purchases}
+    supplies = []
+    for row in rows[:100]:
+        purchase = latest.get(row.id)
+        reference = None
+        if purchase:
+            line, invoice = purchase
+            reference = {
+                "invoice_id": invoice.id, "date": invoice.fecha.isoformat(),
+                "unit_price": float(line.precio_unitario), "currency": invoice.moneda,
+                "unit": line.unidad, "tax_percent": float(line.impuesto_porcentaje or 0),
+                "basis": "Precio histórico antes de impuestos y descuentos; no es una cotización vigente",
+            }
+        supplies.append({
+            "id": row.id, "name": row.nombre, "unit": row.unidad,
+            "stock": float(row.stock_actual or 0), "minimum": row.stock_minimo,
+            "out_of_stock": float(row.stock_actual or 0) <= 0,
+            "historical_purchase": reference,
+        })
     low_stock = [
         row
         for row in rows
@@ -618,6 +794,8 @@ def inventory_status(db: Session, _: dict[str, Any]) -> dict[str, Any]:
         "ok": True,
         "metric": "inventory_status",
         "active_supplies": len(rows),
+        "supplies": supplies,
+        "supplies_truncated": len(rows) > len(supplies),
         "low_stock_count": len(low_stock),
         "inventory_cost_value": inventory_value,
         "currency": "CRC",
@@ -777,6 +955,8 @@ def execute_metric(db: Session, metric_key: str, parameters: dict[str, Any] | No
         "lot_qr": lot_qr_for_client,
         "lot_status": lot_status,
         "farm_activity": farm_activity,
+        "days_since_fertilization": days_since_fertilization,
+        "farm_sensor_analysis": farm_sensor_analysis,
         "inventory_status": inventory_status,
         "sales_summary": sales_summary,
         "business_overview": business_overview,

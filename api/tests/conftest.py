@@ -50,3 +50,13 @@ def pytest_sessionfinish(session, exitstatus):
     shutil.rmtree(TEST_DATABASE_PATH.with_suffix(".uploads"), ignore_errors=True)
     shutil.rmtree(TEST_DATABASE_PATH.with_suffix(".receipt-uploads"), ignore_errors=True)
     shutil.rmtree(TEST_DATABASE_PATH.with_suffix(".public-uploads"), ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def isolate_rate_limits():
+    from rate_limit import _BUCKETS, _LOCK
+    with _LOCK:
+        _BUCKETS.clear()
+    yield
+    with _LOCK:
+        _BUCKETS.clear()

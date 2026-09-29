@@ -1009,11 +1009,11 @@ def create_ot_from_payload(db: Session, payload, current: Usuario | None = None)
     responsable = db.query(Usuario).filter(
         Usuario.id == payload.operario_id,
         Usuario.activo,
-        Usuario.rol.in_(["operario", "gerente"]),
+        (Usuario.rol.in_(["operario", "gerente", "admin"]) | Usuario.is_superadmin.is_(True)),
     ).first()
 
     if not responsable:
-        raise ValueError("El responsable asignado debe ser un operario o gerente activo")
+        raise ValueError("El responsable asignado debe ser un operario, gerente o administrador activo")
 
     asignaciones = []
 
@@ -1037,16 +1037,23 @@ def create_ot_from_payload(db: Session, payload, current: Usuario | None = None)
     recibos = []
     total_cajuelas = 0.0
 
-    for item in asignaciones:
+    seen_receipts = set()
+    for item in sorted(asignaciones, key=lambda item: item.recibo_id):
+        if item.recibo_id in seen_receipts:
+            raise ValueError("No se puede asignar el mismo recibo dos veces al lote")
+        seen_receipts.add(item.recibo_id)
         recibo = (
             db.query(ReciboCafe)
             .filter(ReciboCafe.id == item.recibo_id)
+            .with_for_update()
             .first()
         )
 
         if not recibo:
             raise ValueError(f"Recibo {item.recibo_id} no encontrado")
 
+        if str(recibo.estado or "").lower() == "anulado":
+            raise ValueError("No se puede crear un lote con un recibo anulado")
         disponible = recibo_disponible_cajuelas(db, recibo)
         solicitado = float(item.cajuelas_asignadas or 0) + float(item.cuartillos_asignados or 0) / 4
 

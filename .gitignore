@@ -53,6 +53,8 @@ uploads/
 tmp/
 temp/
 
+data/
+
 # Backups
 backup/
 backups/

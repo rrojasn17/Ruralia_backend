@@ -33,6 +33,7 @@ from config import (
 from modules.mod_caficultura.model_ai_consulting import AIAgent, AIAttachment, AIAuditLog, AIConversation, AIMessage
 from core.models import ConfiguracionSistema, Usuario
 from modules.mod_caficultura.ai_actions import (
+    prepare_farm_activity_action,
     prepare_lot_document_action,
     prepare_receipt_action,
     prepare_sale_request_action,
@@ -72,6 +73,15 @@ Política operativa obligatoria de NAVIA:
 - Para localizar o descargar documentos usa search_documents y presenta el componente devuelto.
 - Para crear una solicitud de venta usa prepare_sale_request. Guía al usuario un dato a la vez y acepta una
   orden de compra adjunta; nunca afirmes que fue guardada hasta que la tarjeta sea confirmada y ejecutada.
+- Para registrar una actividad agrícola usa prepare_farm_activity. Presenta finca, actividad, fecha y detalle
+    en una tarjeta y espera confirmación explícita antes de guardar.
+- Ante preguntas sobre si conviene realizar una actividad en una finca, consulta la finca por nombre y reúne
+    días desde la última fertilización, actividad y costos, inventario disponible, recibos y humedad de sensores.
+    Diferencia lecturas ausentes o antiguas de condiciones normales; no inventes dosis, productos ni diagnósticos.
+    Sugiere insumos solo si aparecen en existencias o en el historial, e indica cuándo falta evidencia agronómica.
+    Usa inventory_status para comprobar faltantes y precios históricos de compras. Advierte si no hay existencias.
+    Toda estimación debe indicar fecha, moneda, unidad y factura de referencia; no presentes precios históricos
+    como cotizaciones actuales. Si faltan precio o cantidad, indícalo y no inventes un costo total.
 - Las herramientas cubren lectura transversal de datos operativos, pero no existe acceso SQL directo.
 - Está absolutamente prohibido borrar, eliminar, anular o ejecutar acciones destructivas. No existe ninguna
   herramienta de borrado. No intentes simularla ni solicitar confirmación para ella.
@@ -395,6 +405,8 @@ TOOLS = [
                         "farm_activity",
                         "inventory_status",
                         "sales_summary",
+                        "days_since_fertilization",
+                        "farm_sensor_analysis",
                         "business_overview",
                     ],
                 },
@@ -408,6 +420,9 @@ TOOLS = [
                 ),
                 "end_date": _nullable({"type": "string", "description": "AAAA-MM-DD"}),
                 "limit": _nullable({"type": "integer", "minimum": 1, "maximum": 30}),
+                "hours": _nullable({"type": "integer", "minimum": 1, "maximum": 168}),
+                "humidity_threshold": _nullable({"type": "number", "minimum": 0, "maximum": 100}),
+                "max_gap_hours": _nullable({"type": "number", "minimum": 0.25, "maximum": 6}),
             },
             "required": [
                 "metric",
@@ -419,6 +434,9 @@ TOOLS = [
                 "start_date",
                 "end_date",
                 "limit",
+                "hours",
+                "humidity_threshold",
+                "max_gap_hours",
             ],
             "additionalProperties": False,
         },
@@ -540,6 +558,28 @@ TOOLS = [
                 "limit": {"type": "integer", "minimum": 1, "maximum": 40},
             },
             "required": ["query", "document_type", "limit"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "prepare_farm_activity",
+        "description": (
+            "Prepara, pero NO guarda, el registro de una actividad agrícola en una finca. "
+            "Resuelve la finca y la actividad contra los catálogos; solicita aclaración si hay ambigüedad. "
+            "La escritura siempre requiere confirmación humana."
+        ),
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "farm_name": {"type": "string"},
+                "activity_name": {"type": "string"},
+                "date": _nullable({"type": "string", "description": "AAAA-MM-DD"}),
+                "description": _nullable({"type": "string"}),
+                "observations": _nullable({"type": "string"}),
+            },
+            "required": ["farm_name", "activity_name", "date", "description", "observations"],
             "additionalProperties": False,
         },
     },
@@ -874,6 +914,8 @@ def _dispatch_tool(
         )
     if name == "prepare_receipt":
         return prepare_receipt_action(db, conversation, user, message, arguments)
+    if name == "prepare_farm_activity":
+        return prepare_farm_activity_action(db, conversation, user, message, arguments)
     if name == "prepare_lot_document":
         if not arguments.get("attachment_id"):
             available = [

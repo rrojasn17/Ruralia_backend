@@ -77,7 +77,7 @@ from modules.mod_caficultura.schema_ai_consulting import (
 )
 from modules.mod_caficultura.ai_actions import cancel_pending_action, confirm_pending_action
 from modules.mod_caficultura.ai_agent import ensure_default_agent, process_message, transcribe_audio
-from modules.mod_caficultura.ai_automation_engine import process_due_automations
+from modules.mod_caficultura.ai_automation_engine import parse_monitoring_instruction, process_due_automations
 from modules.mod_caficultura.ai_metrics import METRIC_OPTIONS, execute_metric
 from services.ai_storage import resolve_storage_path, save_upload
 from modules.mod_caficultura.telegram_bridge import process_telegram_update
@@ -212,6 +212,8 @@ def _validate_telegram_recipients(db: Session, user: Usuario, chat_ids: list[str
 def _validate_automation_metric(db: Session, metric_key: str, parameters: dict[str, Any]) -> None:
     required = {
         "farm_spend": ("farm_name", "Indique la finca que desea medir"),
+        "days_since_fertilization": ("farm_name", "Indique la finca que desea monitorear"),
+        "farm_sensor_analysis": ("farm_name", "Indique la finca cuyos sensores desea monitorear"),
         "worker_status": ("worker_name", "Indique el trabajador que desea seguir"),
         "lot_status": ("lot_code", "Indique el lote que desea seguir"),
     }
@@ -225,6 +227,28 @@ def _validate_automation_metric(db: Session, metric_key: str, parameters: dict[s
     result = execute_metric(db, metric_key, parameters)
     if not result.get("ok"):
         raise HTTPException(status_code=422, detail=str(result.get("message") or "Los parámetros de la métrica no son válidos"))
+
+
+def _apply_monitoring_instruction(payload: AIAutomationCreate) -> AIAutomationCreate:
+    values = payload.model_dump()
+    parameters = dict(values.get("parameters") or {})
+    instruction = str(parameters.get("rule_instruction") or "").strip()
+    if not instruction:
+        return payload
+    parsed = parse_monitoring_instruction(instruction)
+    if not parsed:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "No pude interpretar esa condición. Use una regla como "
+                "'Avisarme si pasan más de 45 días sin fertilizar' o "
+                "'15 horas seguidas de humedad mayor al 85%'."
+            ),
+        )
+    parameters.update(parsed.get("parameters") or {})
+    values.update({key: value for key, value in parsed.items() if key != "parameters"})
+    values["parameters"] = parameters
+    return AIAutomationCreate.model_validate(values)
 
 
 @router.get("/config", response_model=AIConfigOut)
@@ -351,6 +375,18 @@ def list_messages(
 ):
     conversation = _owned_conversation(db, conversation_id, current)
     return [_message_out(row, conversation.pending_actions) for row in conversation.messages]
+
+
+@router.delete("/conversations/{conversation_id}", status_code=204)
+def delete_conversation(conversation_id: int, current: Usuario = Depends(manager_dependency), db: Session = Depends(get_db)):
+    row = _owned_conversation(db, conversation_id, current)
+    # Hide only this user's conversation; preserve operational records and audit.
+    row.status = "deleted"
+    for action in row.pending_actions:
+        if action.status == "pending":
+            action.status = "cancelled"
+            action.version += 1
+    db.commit()
 
 
 @router.post("/conversations/{conversation_id}/archive", response_model=AIConversationOut)
@@ -574,6 +610,7 @@ def create_automation(
     current: Usuario = Depends(manager_dependency),
     db: Session = Depends(get_db),
 ):
+    payload = _apply_monitoring_instruction(payload)
     if payload.metric_key not in {item["value"] for item in METRIC_OPTIONS}:
         raise HTTPException(status_code=422, detail="Métrica de automatización no permitida")
     _validate_automation_metric(db, payload.metric_key, payload.parameters)
@@ -620,7 +657,7 @@ def update_automation(
         "enabled": row.enabled,
     }
     current_values.update(payload.model_dump(exclude_unset=True))
-    validated = AIAutomationCreate.model_validate(current_values)
+    validated = _apply_monitoring_instruction(AIAutomationCreate.model_validate(current_values))
     if validated.metric_key not in {item["value"] for item in METRIC_OPTIONS}:
         raise HTTPException(status_code=422, detail="Métrica de automatización no permitida")
     _validate_automation_metric(db, validated.metric_key, validated.parameters)

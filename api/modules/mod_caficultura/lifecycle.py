@@ -75,6 +75,8 @@ def upgrade_schema(db: Session) -> None:
 
     # Migraciones/indexes históricos que pertenecen al módulo, no al core.
     statements = [
+        "ALTER TABLE navia_gf_registros ADD COLUMN IF NOT EXISTS ispublic BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE navia_insumo_compras_facturas ADD COLUMN IF NOT EXISTS descuento DOUBLE PRECISION NOT NULL DEFAULT 0",
         "ALTER TABLE navia_clientes ADD COLUMN IF NOT EXISTS portal_token VARCHAR(255)",
         "ALTER TABLE navia_recibos_cafe ADD COLUMN IF NOT EXISTS liquidado BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE navia_recibos_cafe ADD COLUMN IF NOT EXISTS liquidado_at TIMESTAMP WITH TIME ZONE",
@@ -208,6 +210,9 @@ def upgrade_schema(db: Session) -> None:
 
 def activate(db: Session) -> None:
     upgrade_schema(db)
+    from modules.mod_caficultura.sequence_repair import repair_sequences
+    repair_sequences(db)
+    db.commit()
 
 
 def deactivate(db: Session) -> None:

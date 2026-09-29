@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
-Channel = Literal["email", "telegram"]
+Channel = Literal["in_app", "email", "telegram"]
 Recurrence = Literal["once", "interval", "daily", "weekly", "monthly"]
 ConditionOperator = Literal["always", "gt", "gte", "lt", "lte", "eq", "changed"]
 
@@ -173,7 +173,7 @@ class AIAutomationCreate(BaseModel):
     interval_minutes: int | None = Field(default=None, ge=15, le=43_200)
     timezone: str = Field(default="America/Costa_Rica", min_length=3, max_length=80)
     next_run_at: datetime
-    channels: list[Channel] = Field(min_length=1, max_length=2)
+    channels: list[Channel] = Field(min_length=1, max_length=3)
     email_recipients: list[EmailStr] = Field(default_factory=list, max_length=20)
     telegram_chat_ids: list[str] = Field(default_factory=list, max_length=20)
     message_template: str | None = Field(default=None, max_length=4000)

@@ -12,6 +12,7 @@ ROUTER_ENTRYPOINTS = (
     "modules.mod_caficultura.iot_router:router",
     "modules.mod_caficultura.ai_knowledge_router:router",
     "modules.mod_caficultura.ai_farm_router:router",
+    "modules.mod_caficultura.reports:router",
 )
 
 WORKER_ENTRYPOINT = "modules.mod_caficultura.worker:run_cycle"

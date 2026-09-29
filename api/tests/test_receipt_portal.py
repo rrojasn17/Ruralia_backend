@@ -120,6 +120,7 @@ def test_customer_receipt_portal_and_irreversible_liquidation_flow():
         liquidation = client.post(
             f"/recibos/{receipt_id}/liquidar",
             data={
+                "fecha_pago": "2026-09-15",
                 "nota": "Pago completo por transferencia bancaria",
                 "numero_transferencia": "SINPE-001",
                 "monto": "97500",
@@ -136,6 +137,7 @@ def test_customer_receipt_portal_and_irreversible_liquidation_flow():
         paid = liquidation.json()
         assert paid["liquidado"] is True
         assert paid["estado_liquidacion"] == "liquidado"
+        assert paid["liquidado_at"].startswith("2026-09-15")
         assert paid["liquidacion_monto"] == 97500
         assert paid["liquidacion_numero_transferencia"] == "SINPE-001"
         assert paid["liquidacion_comprobante_nombre"] == "transferencia.pdf"

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import logging
+import hashlib
+import re
+import unicodedata
 from calendar import monthrange
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -10,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from config import NOTIFICATION_BATCH_SIZE, smtp_is_configured, telegram_is_configured
 from modules.mod_caficultura.model_ai_consulting import AIAgent, AIAutomation, AIAutomationRun
+from modules.mod_caficultura.model_notifications import NotificationDelivery, NotificationEvent
 from modules.mod_caficultura.ai_agent import ensure_default_agent, summarize_metric
 from modules.mod_caficultura.ai_metrics import execute_metric
 from services.email_service import send_notification_email
@@ -21,6 +25,41 @@ logger = logging.getLogger("navia-api.ai-automation")
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def parse_monitoring_instruction(instruction: str) -> dict[str, Any] | None:
+    normalized = unicodedata.normalize("NFD", str(instruction or "").strip().lower())
+    normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    normalized = normalized.replace(",", ".")
+
+    days_match = re.search(
+        r"mas\s+de\s+(\d+(?:\.\d+)?)\s+dias?\s+sin\s+(?:abonar|fertilizar)",
+        normalized,
+    )
+    if days_match:
+        return {
+            "metric_key": "days_since_fertilization",
+            "condition_operator": "gt",
+            "threshold": float(days_match.group(1)),
+            "parameters": {},
+        }
+
+    hours_match = re.search(
+        r"(\d+(?:\.\d+)?)\s*horas?\s+(?:seguidas?|consecutivas?)",
+        normalized,
+    )
+    humidity_match = re.search(
+        r"humedad(?:\s+relativa)?\s+(?:mayor|superior)\s+(?:al|a|de)\s*(\d+(?:\.\d+)?)\s*%?",
+        normalized,
+    )
+    if hours_match and humidity_match:
+        return {
+            "metric_key": "farm_sensor_analysis",
+            "condition_operator": "gte",
+            "threshold": float(hours_match.group(1)),
+            "parameters": {"humidity_threshold": float(humidity_match.group(1))},
+        }
+    return None
 
 
 def _normalize(value: datetime) -> datetime:
@@ -120,6 +159,8 @@ def _render_template(row: AIAutomation, result: dict[str, Any]) -> str:
 def _deliver(row: AIAutomation, message: str) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     channels = set(row.channels or [])
+    if "in_app" in channels:
+        results.append({"channel": "in_app", "status": "sent"})
     if "email" in channels:
         for recipient in row.email_recipients or []:
             try:
@@ -148,6 +189,46 @@ def _deliver(row: AIAutomation, message: str) -> list[dict[str, Any]]:
                 logger.exception("Falló automatización %s por Telegram", row.id)
                 results.append({"channel": "telegram", "recipient": str(chat_id), "status": "failed", "error": str(exc)[:500]})
     return results
+
+
+def _create_in_app_alert(
+    db: Session,
+    row: AIAutomation,
+    run: AIAutomationRun,
+    result: dict[str, Any],
+    message: str,
+    now: datetime,
+) -> None:
+    owner = row.usuario
+    if not owner or not str(owner.correo or "").strip():
+        return
+    dedupe_key = hashlib.sha256(f"ai-automation:{row.id}:{run.id}".encode("utf-8")).hexdigest()
+    event = NotificationEvent(
+        dedupe_key=dedupe_key,
+        category="farm_monitoring",
+        entity_type="ai_automation",
+        entity_id=str(row.id),
+        severity="warning",
+        title=row.name[:180],
+        message=message,
+        recommended_action="Abra NAVIA para revisar la finca, la regla y las lecturas de origen.",
+        status="sent",
+        source_payload={"automation_id": row.id, "metric_key": row.metric_key, "value": result},
+        ai_payload={"channels": list(row.channels or []), "in_app": True},
+        detected_at=now,
+        last_seen_at=now,
+        sent_at=now,
+    )
+    db.add(event)
+    db.flush()
+    db.add(NotificationDelivery(
+        event_id=event.id,
+        usuario_id=owner.id,
+        recipient_email=owner.correo.strip().lower(),
+        recipient_name=owner.nombre,
+        status="sent",
+        sent_at=now,
+    ))
 
 
 def process_due_automations(
@@ -191,8 +272,23 @@ def process_due_automations(
                 row.next_run_at = next_run
             if not result.get("ok"):
                 raise ValueError(str(result.get("message") or "La consulta programada no pudo completarse"))
+            previous_value = dict(row.last_value or {})
             matches = condition_matches(row, result)
-            row.last_value = result
+            operator = str(row.condition_operator or "always")
+            persistent_threshold = operator in {"gt", "gte", "lt", "lte", "eq"}
+            already_active = (
+                matches
+                and persistent_threshold
+                and (
+                    previous_value.get("_condition_active") is True
+                    or (
+                        "_condition_active" not in previous_value
+                        and row.last_sent_at is not None
+                        and condition_matches(row, previous_value)
+                    )
+                )
+            )
+            row.last_value = {**result, "_condition_active": matches} if persistent_threshold else result
             if not matches:
                 run.status = "skipped"
                 run.message = str(result.get("summary") or "Condición no cumplida")
@@ -201,9 +297,18 @@ def process_due_automations(
                 row.last_error = None
                 totals["skipped"] += 1
                 continue
+            if already_active:
+                run.status = "skipped"
+                run.message = "La condición continúa activa; la notificación se rearmará cuando deje de cumplirse."
+                run.delivery_results = []
+                run.finished_at = utcnow()
+                row.last_error = None
+                totals["skipped"] += 1
+                continue
             agent: AIAgent = row.agent or ensure_default_agent(db, row.usuario_id)
             base_message = _render_template(row, result)
             message = summarize_metric(agent, result, base_message) if row.ai_enhance else base_message
+            _create_in_app_alert(db, row, run, result, message, now)
             deliveries = _deliver(row, message)
             failures = [item for item in deliveries if item.get("status") != "sent"]
             successes = [item for item in deliveries if item.get("status") == "sent"]

@@ -131,7 +131,7 @@ def require_roles(*roles: str):
     def dep(current: Usuario = Depends(get_current_user)) -> Usuario:
         if bool(getattr(current, "is_superadmin", False)):
             return current
-        if current.rol == "gerente" or current.rol in allowed:
+        if current.rol == "gerente" or current.rol in allowed or (current.rol == "admin" and "gerente" in allowed):
             return current
         raise HTTPException(status_code=403, detail="No autorizado para esta acción")
 

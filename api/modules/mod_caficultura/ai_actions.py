@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import unicodedata
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -18,11 +19,13 @@ from sqlalchemy.orm import Session
 from config import AI_ACTION_EXPIRY_MINUTES, APP_BASE_URL
 from modules.mod_caficultura.model_ai_consulting import AIAttachment, AIAuditLog, AIConversation, AIMessage, AIPendingAction
 from modules.mod_caficultura.models import (
+    ActividadFinca,
     Cliente,
     ComentarioLote,
     DocumentoLote,
     Finca,
     OrdenTrabajo,
+    RegistroFinca,
     SolicitudVenta,
     SolicitudVentaDocumento,
     SolicitudVentaLinea,
@@ -204,6 +207,7 @@ def prepare_receipt_action(
         "estado": "recibido",
         "observaciones": str(arguments.get("observations") or "").strip() or None,
     }
+
     try:
         ReciboCreate.model_validate(payload)
     except ValidationError as exc:
@@ -225,6 +229,97 @@ def prepare_receipt_action(
         user=user,
         message=message,
         action_type="create_receipt",
+        summary=summary,
+        payload=payload,
+    )
+    return {
+        "ok": True,
+        "requires_confirmation": True,
+        "action_public_id": action.public_id,
+        "action_version": action.version,
+        "summary": action.summary,
+        "expires_at": action.expires_at.isoformat(),
+    }
+
+
+def _normalize_activity_name(value: object) -> str:
+    normalized = unicodedata.normalize("NFD", str(value or "").strip().lower())
+    return "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+
+
+def prepare_farm_activity_action(
+    db: Session,
+    conversation: AIConversation,
+    user: Usuario,
+    message: AIMessage,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    farm_name = str(arguments.get("farm_name") or "").strip()
+    activity_name = str(arguments.get("activity_name") or "").strip()
+    if not farm_name:
+        return {"ok": False, "needs_clarification": True, "message": "¿En cuál finca desea registrar la actividad?"}
+    resolved_farm = resolve_farm(db, farm_name)
+    if not resolved_farm.get("ok"):
+        return resolved_farm
+    farm: Finca = resolved_farm["row"]
+    if not farm.gestion_fincas_habilitada:
+        return {"ok": False, "message": f"La finca {farm.nombre} no tiene habilitado el módulo de gestión de actividades."}
+
+    activities = (
+        db.query(ActividadFinca)
+        .filter(ActividadFinca.activa.is_(True))
+        .order_by(ActividadFinca.nombre.asc())
+        .all()
+    )
+    if not activity_name:
+        return {
+            "ok": False,
+            "needs_clarification": True,
+            "message": "¿Qué actividad desea registrar? Seleccione una actividad del catálogo.",
+            "options": [{"id": row.id, "label": f"{row.nombre} · {row.tipo}"} for row in activities[:20]],
+        }
+    normalized_name = _normalize_activity_name(activity_name)
+    matches = [
+        row for row in activities
+        if normalized_name == _normalize_activity_name(row.nombre)
+        or normalized_name in _normalize_activity_name(row.nombre)
+        or normalized_name in _normalize_activity_name(row.tipo)
+    ]
+    if len(matches) != 1:
+        return {
+            "ok": False,
+            "needs_clarification": True,
+            "message": "No pude identificar una actividad única del catálogo. Elija una opción.",
+            "options": [{"id": row.id, "label": f"{row.nombre} · {row.tipo}"} for row in (matches or activities)[:20]],
+        }
+
+    activity = matches[0]
+    raw_date = str(arguments.get("date") or "").strip()
+    try:
+        activity_date = date.fromisoformat(raw_date) if raw_date else date.today()
+    except ValueError:
+        return {"ok": False, "needs_clarification": True, "message": "La fecha debe usar el formato AAAA-MM-DD."}
+
+    description = str(arguments.get("description") or activity.nombre).strip()[:255]
+    observations = str(arguments.get("observations") or "").strip()[:4000] or None
+    payload = {
+        "farm_id": farm.id,
+        "farm_name": farm.nombre,
+        "activity_id": activity.id,
+        "activity_name": activity.nombre,
+        "date": activity_date.isoformat(),
+        "description": description,
+        "observations": observations,
+    }
+    summary = f"Registrar {activity.nombre} en {farm.nombre} el {activity_date.isoformat()}"
+    if observations:
+        summary += f". Observación: {observations}"
+    action = _create_pending_action(
+        db,
+        conversation=conversation,
+        user=user,
+        message=message,
+        action_type="create_farm_activity",
         summary=summary,
         payload=payload,
     )
@@ -559,6 +654,47 @@ def _execute_receipt(db: Session, action: AIPendingAction, user: Usuario) -> dic
     }
 
 
+def _execute_farm_activity(db: Session, action: AIPendingAction, user: Usuario) -> dict[str, Any]:
+    payload = dict(action.payload or {})
+    farm = db.query(Finca).filter(
+        Finca.id == int(payload["farm_id"]),
+        Finca.activa.is_(True),
+        Finca.gestion_fincas_habilitada.is_(True),
+    ).first()
+    activity = db.query(ActividadFinca).filter(
+        ActividadFinca.id == int(payload["activity_id"]),
+        ActividadFinca.activa.is_(True),
+    ).first()
+    if not farm:
+        raise ValueError("La finca ya no existe, está inactiva o no tiene habilitada la gestión")
+    if not activity:
+        raise ValueError("La actividad ya no existe o está inactiva")
+    activity_date = date.fromisoformat(str(payload["date"]))
+    week_start = activity_date - timedelta(days=activity_date.weekday())
+    row = RegistroFinca(
+        fecha=activity_date,
+        semana_inicio=week_start,
+        semana_fin=week_start + timedelta(days=5),
+        finca_id=farm.id,
+        actividad_id=activity.id,
+        descripcion=str(payload.get("description") or activity.nombre)[:255],
+        estado="registrado",
+        observaciones=payload.get("observations"),
+        created_by_id=user.id,
+    )
+    db.add(row)
+    db.flush()
+    return {
+        "entity": "farm_activity",
+        "id": row.id,
+        "farm_id": farm.id,
+        "farm_name": farm.nombre,
+        "activity_name": activity.nombre,
+        "date": activity_date.isoformat(),
+        "path": f"/gestionfincas/{row.id}",
+    }
+
+
 def _execute_lot_document(db: Session, action: AIPendingAction, user: Usuario) -> tuple[dict[str, Any], Path]:
     payload = dict(action.payload or {})
     lot = db.query(OrdenTrabajo).filter(OrdenTrabajo.id == int(payload["lot_id"])).first()
@@ -746,6 +882,8 @@ def confirm_pending_action(
         action.version += 1
         if action.action_type == "create_receipt":
             result = _execute_receipt(db, action, user)
+        elif action.action_type == "create_farm_activity":
+            result = _execute_farm_activity(db, action, user)
         elif action.action_type == "attach_lot_document":
             result, copied_path = _execute_lot_document(db, action, user)
             copied_paths.append(copied_path)

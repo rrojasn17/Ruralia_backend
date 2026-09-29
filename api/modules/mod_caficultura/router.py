@@ -733,7 +733,7 @@ def delete_usuario(
 
 @router.get("/empleados", response_model=list[UsuarioOut])
 def list_empleados(current: Usuario = Depends(get_current_user), db: Session = Depends(get_db)):
-    rows = db.query(Usuario).filter(Usuario.rol.in_(["operario", "gerente"]), Usuario.activo).order_by(Usuario.rol.asc(), Usuario.nombre.asc()).all()
+    rows = db.query(Usuario).filter(or_(Usuario.rol.in_(["operario", "gerente", "admin"]), Usuario.is_superadmin.is_(True)), Usuario.activo).order_by(Usuario.rol.asc(), Usuario.nombre.asc()).all()
     return [usuario_out(u) for u in rows]
 
 
@@ -1308,14 +1308,14 @@ def delete_recibo(
 @router.get("/ot", response_model=list[OTOut])
 def list_ot(current: Usuario = Depends(get_current_user), db: Session = Depends(get_db)):
     query = ot_query(db)
-    if current.rol == "operario":
+    if current.rol == "operario" and not current.is_superadmin:
         query = query.filter(OrdenTrabajo.operario_id == current.id)
     rows = query.order_by(OrdenTrabajo.fecha_inicio.desc(), OrdenTrabajo.id.desc()).all()
     return [serialize_ot(r) for r in rows]
 
 
 @router.post("/ot", response_model=OTOut, status_code=201)
-def create_ot(payload: OTCreate, current: Usuario = Depends(require_roles("gerente")), db: Session = Depends(get_db)):
+def create_ot(payload: OTCreate, current: Usuario = Depends(require_roles("gerente", "admin")), db: Session = Depends(get_db)):
     try:
         row = create_ot_from_payload(db, payload, current)
         db.commit()
@@ -1330,7 +1330,7 @@ def create_ot(payload: OTCreate, current: Usuario = Depends(require_roles("geren
 
 
 @router.post("/ot/unir", response_model=OTOut, status_code=201)
-def unir_lotes(payload: OTMergePayload, current: Usuario = Depends(require_roles("gerente")), db: Session = Depends(get_db)):
+def unir_lotes(payload: OTMergePayload, current: Usuario = Depends(require_roles("gerente", "admin")), db: Session = Depends(get_db)):
     ids = list(dict.fromkeys([int(x) for x in payload.ot_ids if int(x) > 0]))
     if len(ids) < 2:
         raise HTTPException(status_code=422, detail="Seleccione al menos dos lotes para unir")
@@ -1467,7 +1467,7 @@ def solicitar_finalizacion_ot(
         raise HTTPException(status_code=404, detail="OT no encontrada")
     ensure_lote_not_unido(row, "solicitar aprobación")
 
-    if current.rol == "operario" and row.operario_id != current.id:
+    if current.rol == "operario" and not current.is_superadmin and row.operario_id != current.id:
         raise HTTPException(status_code=403, detail="Solo el operario asignado puede solicitar finalización")
 
     row.estado = "pendiente_aprobacion"
@@ -1698,7 +1698,7 @@ def create_seguimiento(ot_id: int, payload: SeguimientoCreate, current: Usuario 
     if not row:
         raise HTTPException(status_code=404, detail="OT no encontrada")
     ensure_lote_not_unido(row, "registrar seguimientos")
-    if current.rol == "operario" and row.operario_id != current.id:
+    if current.rol == "operario" and not current.is_superadmin and row.operario_id != current.id:
         raise HTTPException(status_code=403, detail="Solo puedes registrar seguimiento en tus OT asignadas")
     if payload.client_uuid:
         existing = db.query(SeguimientoOT).filter(SeguimientoOT.client_uuid == payload.client_uuid).first()
@@ -1909,6 +1909,7 @@ def serialize_compra_insumo(row: CompraInsumoFactura) -> CompraInsumoOut:
         fecha=row.fecha,
         moneda=row.moneda,
         observaciones=row.observaciones,
+        descuento=float(row.descuento or 0),
         subtotal=float(row.subtotal or 0),
         impuesto=float(row.impuesto or 0),
         total=float(row.total or 0),
@@ -1948,6 +1949,7 @@ def serialize_registro_finca(row: RegistroFinca) -> RegistroFincaOut:
     costo_insumos = round(sum(float(i.get("costo_total") or 0) for i in insumos), 2)
 
     return RegistroFincaOut(
+        ispublic=bool(row.ispublic),
         id=row.id,
         fecha=row.fecha,
         semana_inicio=row.semana_inicio,
@@ -2342,7 +2344,11 @@ def create_compra_insumos(payload: CompraInsumoCreate, current: Usuario = Depend
 
     factura.subtotal = round(subtotal_total, 2)
     factura.impuesto = round(impuesto_total, 2)
-    factura.total = round(subtotal_total + impuesto_total, 2)
+    factura.descuento = round(payload.descuento, 2)
+    if factura.descuento > round(subtotal_total + impuesto_total, 2):
+        db.rollback()
+        raise HTTPException(status_code=422, detail="El descuento no puede superar el total de la factura")
+    factura.total = round(subtotal_total + impuesto_total - factura.descuento, 2)
 
     try:
         db.commit()
@@ -2414,7 +2420,7 @@ def delete_insumo_finca(insumo_id: int, current: Usuario = Depends(get_current_u
 
 @router.get("/gestion-fincas/registros", response_model=list[RegistroFincaOut])
 def list_registros_finca(current: Usuario = Depends(require_roles("gerente", "administrativo", "supervisor_finca")), db: Session = Depends(get_db)):
-    rows = registro_finca_query(db).order_by(RegistroFinca.semana_inicio.desc(), RegistroFinca.fecha.desc(), RegistroFinca.id.desc()).all()
+    rows = registro_finca_query(db).order_by(RegistroFinca.fecha.desc(), RegistroFinca.id.desc()).all()
     return [serialize_registro_finca(row) for row in rows]
 
 
@@ -2432,6 +2438,7 @@ def create_registro_finca(payload: RegistroFincaCreate, current: Usuario = Depen
         raise HTTPException(status_code=404, detail="Actividad no encontrada o inactiva")
     inicio, fin = semana_operativa(payload.fecha)
     row = RegistroFinca(
+        ispublic=payload.ispublic,
         fecha=payload.fecha,
         semana_inicio=inicio,
         semana_fin=fin,
@@ -2762,6 +2769,9 @@ async def importar_respaldo(file: UploadFile = File(...), current: Usuario = Dep
                     db.add(model(**values))
                     imported += 1
 
+        db.flush()
+        from modules.mod_caficultura.sequence_repair import repair_sequences
+        repair_sequences(db, BACKUP_MODELS)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -3041,7 +3051,7 @@ def get_cotizacion_venta(codigo: str, current: Usuario = Depends(get_current_use
 @router.post("/cotizaciones-venta", response_model=CotizacionVentaOut, status_code=201)
 def create_cotizacion_venta(
     payload: CotizacionVentaCreate,
-    current: Usuario = Depends(require_roles("gerente", "administrativo")),
+    current: Usuario = Depends(require_roles("gerente", "admin", "administrativo")),
     db: Session = Depends(get_db),
 ):
     if not payload.lineas:
@@ -3098,7 +3108,7 @@ def create_cotizacion_venta(
 def update_cotizacion_venta(
     cotizacion_id: int,
     payload: CotizacionVentaUpdate,
-    current: Usuario = Depends(require_roles("gerente")),
+    current: Usuario = Depends(require_roles("gerente", "admin")),
     db: Session = Depends(get_db),
 ):
     row = db.query(CotizacionVenta).filter(CotizacionVenta.id == cotizacion_id).first()
@@ -3181,7 +3191,7 @@ def list_solicitudes_salida(
 @router.post("/solicitudes-salida", response_model=SolicitudSalidaVentaOut, status_code=201)
 def create_solicitud_salida(
     payload: SolicitudSalidaVentaCreate,
-    current: Usuario = Depends(require_roles("gerente", "administrativo")),
+    current: Usuario = Depends(require_roles("gerente", "admin", "administrativo")),
     db: Session = Depends(get_db),
 ):
     if not payload.lineas:
@@ -3329,7 +3339,7 @@ def upload_lote_documento(
     if not row:
         raise HTTPException(status_code=404, detail="Lote no encontrado")
     ensure_lote_not_unido(row, "adjuntar documentos")
-    if current.rol == "operario" and row.operario_id != current.id:
+    if current.rol == "operario" and not current.is_superadmin and row.operario_id != current.id:
         raise HTTPException(status_code=403, detail="Solo puedes adjuntar documentos a tus lotes asignados")
 
     file_url, original, size, content_type = save_upload_file(file, upload_root() / "lotes" / str(ot_id))
@@ -3362,7 +3372,7 @@ def upload_lote_documento(
 @router.delete("/ot/documentos/{documento_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_lote_documento(
     documento_id: int,
-    current: Usuario = Depends(require_roles("gerente", "administrativo")),
+    current: Usuario = Depends(require_roles("gerente", "admin", "administrativo")),
     db: Session = Depends(get_db),
 ):
     doc = db.query(DocumentoLote).filter(DocumentoLote.id == documento_id).first()

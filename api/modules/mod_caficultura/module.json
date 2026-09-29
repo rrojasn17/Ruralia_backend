@@ -1,7 +1,7 @@
 {
   "key": "mod_caficultura",
   "name": "Caficultura",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "module_type": "industry",
   "description": "Gestión de fincas cafetaleras, insumos, recibos, lotes, trazabilidad y ventas.",
   "icon": "i-lucide-coffee",
@@ -47,6 +47,7 @@
     "insumos:view",
     "ventas:view",
     "ventas:manage",
+    "informes:view",
     "ai:view",
     "offline:sync",
     "caficultura:config:manage",
@@ -75,6 +76,7 @@
       "insumos:view",
       "ventas:view",
       "ventas:manage",
+      "informes:view",
       "ai:view",
       "offline:sync",
       "caficultura:config:manage",
@@ -110,7 +112,8 @@
       "offline:sync",
       "proveedores:view",
       "proveedores:manage",
-      "caficultura:config:manage"
+      "caficultura:config:manage",
+      "informes:view"
     ],
     "supervisor_finca": [
       "dashboard:view",
@@ -120,7 +123,8 @@
       "gestionfincas:create",
       "gestionfincas:update",
       "insumos:view",
-      "offline:sync"
+      "offline:sync",
+      "informes:view"
     ],
     "admin": [
       "dashboard:view",
@@ -141,6 +145,7 @@
       "insumos:view",
       "ventas:view",
       "ventas:manage",
+      "informes:view",
       "ai:view",
       "offline:sync",
       "caficultura:config:manage",
@@ -201,6 +206,14 @@
     },
     {
       "group": "Gestión",
+      "label": "Informes",
+      "to": "/informes",
+      "icon": "i-lucide-chart-no-axes-combined",
+      "permission": "informes:view",
+      "training_id": "nav-reports"
+    },
+    {
+      "group": "Gestión",
       "label": "Consultoría IA",
       "to": "/iaconsulting",
       "icon": "i-lucide-bot",
@@ -251,6 +264,7 @@
     "/lotes-vendidos",
     "/solicitudes-venta",
     "/trazabilidad",
+    "/informes",
     "/iaconsulting",
     "/insumos",
     "/admin/procesos",

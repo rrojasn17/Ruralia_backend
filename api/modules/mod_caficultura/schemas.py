@@ -1340,6 +1340,7 @@ class CompraInsumoLineaOut(BaseModel):
 
 
 class CompraInsumoCreate(BaseModel):
+    descuento: float = Field(default=0, ge=0, allow_inf_nan=False)
     numero_factura: Optional[str] = Field(default=None, max_length=120)
     proveedor_id: Optional[int] = None
     # Compatibilidad con clientes antiguos; nuevas UIs deben enviar proveedor_id.
@@ -1351,6 +1352,7 @@ class CompraInsumoCreate(BaseModel):
 
 
 class CompraInsumoOut(BaseModel):
+    descuento: float = 0
     id: int
     numero_factura: Optional[str] = None
     proveedor_id: Optional[int] = None
@@ -1401,6 +1403,7 @@ class RegistroFincaInsumoOut(BaseModel):
 
 
 class RegistroFincaCreate(BaseModel):
+    ispublic: bool = False
     fecha: date
     finca_id: int
     actividad_id: int
@@ -1412,6 +1415,7 @@ class RegistroFincaCreate(BaseModel):
 
 
 class RegistroFincaUpdate(BaseModel):
+    ispublic: bool = False
     fecha: Optional[date] = None
     finca_id: Optional[int] = None
     actividad_id: Optional[int] = None
@@ -1423,6 +1427,7 @@ class RegistroFincaUpdate(BaseModel):
 
 
 class RegistroFincaOut(BaseModel):
+    ispublic: bool = False
     id: int
     fecha: date
     semana_inicio: date

@@ -20,8 +20,11 @@ from models import (
     SolicitudVentaLinea,
     Usuario,
 )
-from services.ai_actions import confirm_pending_action, prepare_sale_request_action
+from services.ai_actions import confirm_pending_action, prepare_farm_activity_action, prepare_sale_request_action
 from modules.mod_caficultura.ai_agent import TOOLS, ensure_default_agent, process_message
+from modules.mod_caficultura.ai_metrics import days_since_fertilization, farm_sensor_analysis
+from modules.mod_caficultura.model_iot import IoTNode, IoTReading
+from modules.mod_caficultura.models import ActividadFinca, RegistroFinca
 from services.ai_data_views import query_operational_data, search_documents
 from services.ai_storage import save_bytes
 from services.stable import bootstrap
@@ -110,6 +113,110 @@ def _seed_operational_data(db_session, suffix: str):
     return user, client, farm, lot
 
 
+def test_farm_context_metrics_use_fertilization_and_continuous_sensor_readings(db_session):
+    _user, _client, farm, _lot = _seed_operational_data(db_session, "FARM-CONTEXT")
+    last_fertilization = date.today() - timedelta(days=46)
+    activity = ActividadFinca(nombre="Fertilización monitor FARM-CONTEXT", tipo="fertilizacion", activa=True)
+    db_session.add(activity)
+    db_session.flush()
+    db_session.add(RegistroFinca(
+        fecha=last_fertilization,
+        semana_inicio=last_fertilization,
+        semana_fin=last_fertilization,
+        finca_id=farm.id,
+        actividad_id=activity.id,
+    ))
+    node = IoTNode(
+        finca_id=farm.id,
+        nombre="Sensor ambiental FARM-CONTEXT",
+        did="FARM-CONTEXT-SENSOR",
+        tipo="microcontrolador",
+        activo=True,
+    )
+    db_session.add(node)
+    db_session.flush()
+    now = datetime.now(timezone.utc)
+    db_session.add_all([
+        IoTReading(
+            node_id=node.id,
+            recorded_at=now - timedelta(hours=15 - index),
+            source="manual",
+            source_event_id=f"farm-context-{index}",
+            data={"humidity": 90},
+        )
+        for index in range(16)
+    ])
+    db_session.commit()
+
+    fertilization = days_since_fertilization(db_session, {"farm_name": farm.nombre})
+    humidity = farm_sensor_analysis(db_session, {"farm_name": farm.nombre, "humidity_threshold": 85})
+    metric_tool = next(item for item in TOOLS if item["name"] == "get_business_metric")
+
+    assert fertilization["ok"] is True
+    assert fertilization["days_without_fertilization"] == 46
+    assert humidity["ok"] is True
+    assert humidity["sample_count"] == 16
+    assert humidity["current_consecutive_high_humidity_hours"] >= 14.99
+    assert {"days_since_fertilization", "farm_sensor_analysis"} <= set(
+        metric_tool["parameters"]["properties"]["metric"]["enum"]
+    )
+
+
+def test_ai_farm_activity_requires_confirmation_and_records_operational_week(db_session):
+    user, _client, farm, _lot = _seed_operational_data(db_session, "ACTIVITY-ACTION")
+    farm.gestion_fincas_habilitada = True
+    activity = ActividadFinca(nombre="Fertilización IA ACTIVITY-ACTION", tipo="fertilizacion", activa=True)
+    db_session.add(activity)
+    db_session.flush()
+    agent = ensure_default_agent(db_session, user.id)
+    conversation = AIConversation(
+        usuario_id=user.id,
+        agent_id=agent.id,
+        title="Registro de finca",
+        channel="web",
+        status="active",
+    )
+    db_session.add(conversation)
+    db_session.flush()
+    message = AIMessage(
+        conversation_id=conversation.id,
+        role="user",
+        content="Registrar fertilización en la finca",
+        status="completed",
+    )
+    db_session.add(message)
+    db_session.commit()
+
+    prepared = prepare_farm_activity_action(
+        db_session,
+        conversation,
+        user,
+        message,
+        {
+            "farm_name": farm.nombre,
+            "activity_name": activity.nombre,
+            "date": date.today().isoformat(),
+            "description": "Fertilización del lote norte",
+            "observations": "Aplicación registrada por voz",
+        },
+    )
+    assert prepared["requires_confirmation"] is True
+    assert db_session.query(RegistroFinca).filter(RegistroFinca.finca_id == farm.id).count() == 0
+
+    action = confirm_pending_action(
+        db_session,
+        prepared["action_public_id"],
+        user,
+        prepared["action_version"],
+    )
+    record = db_session.query(RegistroFinca).filter(RegistroFinca.finca_id == farm.id).one()
+    assert action.status == "executed"
+    assert record.actividad_id == activity.id
+    assert record.descripcion == "Fertilización del lote norte"
+    assert record.semana_inicio.weekday() == 0
+    assert record.semana_fin.weekday() == 5
+
+
 def test_operational_queries_return_mobile_tables_charts_and_documents(db_session):
     _user, _client, _farm, _lot = _seed_operational_data(db_session, "QUERY")
 
@@ -136,7 +243,7 @@ def test_operational_queries_return_mobile_tables_charts_and_documents(db_sessio
     assert lots["components"][0]["rows"][0]["elapsed_days"] == 8
     assert lots["components"][1]["value_format"] == "duration_days"
 
-    documents = search_documents(db_session, "calidad", None, 10)
+    documents = search_documents(db_session, _lot.codigo_lote, "laboratorio", 10)
     assert documents["ok"] is True
     assert documents["total_matches"] == 1
     assert documents["components"][0]["items"][0]["file_name"] == "analisis-calidad.pdf"
@@ -347,3 +454,49 @@ def test_agent_persists_structured_components_from_tool_results(db_session, monk
     assert assistant.meta["tool_names"] == ["query_operational_data"]
     assert [item["type"] for item in assistant.meta["dynamic_components"]] == ["data_table", "chart"]
     assert fake.calls == 2
+
+
+def test_monitoring_alert_rearms_only_after_condition_clears(db_session, monkeypatch):
+    from modules.mod_caficultura import ai_automation_engine as engine
+    from modules.mod_caficultura.model_ai_consulting import AIAutomation
+    from modules.mod_caficultura.model_notifications import NotificationEvent
+
+    user, _, farm, _ = _seed_operational_data(db_session, 'MONITOR-REARM')
+    now = datetime.now(timezone.utc)
+    rule = AIAutomation(usuario_id=user.id, name='Fertilización pendiente', metric_key='days_since_fertilization',
+                        parameters={'farm_name': farm.nombre}, condition_operator='gt', threshold=45,
+                        recurrence='interval', interval_minutes=15, next_run_at=now, channels=['email'],
+                        email_recipients=[user.correo], ai_enhance=False)
+    db_session.add(rule)
+    db_session.commit()
+    sent = []
+    monkeypatch.setattr(engine, '_deliver', lambda row, message: sent.append(message) or [{'status': 'sent'}])
+    for index, value in enumerate([46, 47, 0, 46]):
+        monkeypatch.setattr(engine, 'execute_metric', lambda *args, value=value: {
+            'ok': True, 'primary_value': value, 'summary': f'{value} días sin fertilizar', 'unit': 'days'
+        })
+        engine.process_due_automations(db_session, now + timedelta(minutes=15 * index), automation_ids={rule.id})
+        db_session.commit()
+        assert len(sent) == [1, 1, 1, 2][index]
+    assert db_session.query(NotificationEvent).filter_by(entity_type='ai_automation', entity_id=str(rule.id)).count() == 2
+
+
+def test_monitoring_natural_language_examples():
+    from modules.mod_caficultura.ai_automation_engine import parse_monitoring_instruction
+    days = parse_monitoring_instruction('Avisarme si pasan más de 45 días sin fertilizar.')
+    assert days['metric_key'] == 'days_since_fertilization'
+    assert days['threshold'] == 45
+    humidity = parse_monitoring_instruction('15 horas seguidas de humedad mayor al 85 % representan riesgo de roya')
+    assert humidity['metric_key'] == 'farm_sensor_analysis'
+    assert humidity['threshold'] == 15
+    assert humidity['parameters']['humidity_threshold'] == 85
+    assert parse_monitoring_instruction('Una condición sin datos suficientes') is None
+
+
+def test_in_app_monitoring_does_not_require_external_recipients():
+    from modules.mod_caficultura.schema_ai_consulting import AIAutomationCreate
+    from modules.mod_caficultura.ai_automation_engine import _deliver
+    rule = AIAutomationCreate(name='Monitorear finca', metric_key='inventory_status',
+                              next_run_at=datetime.now(timezone.utc), channels=['in_app'])
+    assert rule.email_recipients == []
+    assert _deliver(rule, 'Aviso interno') == [{'channel': 'in_app', 'status': 'sent'}]

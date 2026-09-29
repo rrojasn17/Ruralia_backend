@@ -40,7 +40,7 @@ from services.email_service import send_notification_email
 from modules.mod_caficultura.notification_engine import to_utc, utcnow
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
-MANAGER_ROLES = {"gerente"}
+MANAGER_ROLES = {"gerente", "admin"}
 
 
 def _is_manager(user: Usuario) -> bool:
@@ -194,7 +194,7 @@ def delete_schedule(
 
 @router.get("/status", response_model=NotificationStatusOut)
 def notification_status(
-    _: Usuario = Depends(require_roles("gerente")),
+    _: Usuario = Depends(require_roles("gerente", "admin")),
     db: Session = Depends(get_db),
 ):
     last_run = db.query(NotificationRun).order_by(NotificationRun.started_at.desc()).first()
@@ -223,10 +223,12 @@ def list_events(
     event_status: str | None = Query(default=None, alias="status"),
     severity: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
-    _: Usuario = Depends(require_roles("gerente")),
+    current: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     query = db.query(NotificationEvent).options(selectinload(NotificationEvent.deliveries))
+    if not _is_manager(current):
+        query = query.join(NotificationDelivery).filter(NotificationDelivery.usuario_id == current.id)
     if event_status:
         query = query.filter(NotificationEvent.status == event_status)
     if severity:
@@ -237,7 +239,7 @@ def list_events(
 @router.get("/runs", response_model=list[NotificationRunOut])
 def list_runs(
     limit: int = Query(default=50, ge=1, le=200),
-    _: Usuario = Depends(require_roles("gerente")),
+    _: Usuario = Depends(require_roles("gerente", "admin")),
     db: Session = Depends(get_db),
 ):
     return db.query(NotificationRun).order_by(NotificationRun.started_at.desc()).limit(limit).all()
@@ -249,7 +251,7 @@ def list_runs(
     status_code=status.HTTP_202_ACCEPTED,
 )
 def run_now(
-    current: Usuario = Depends(require_roles("gerente")),
+    current: Usuario = Depends(require_roles("gerente", "admin")),
     db: Session = Depends(get_db),
 ):
     pending = (
@@ -275,7 +277,7 @@ def run_now(
 
 @router.post("/test-email")
 def test_email(
-    current: Usuario = Depends(require_roles("gerente")),
+    current: Usuario = Depends(require_roles("gerente", "admin")),
 ):
     if not smtp_is_configured():
         raise HTTPException(status_code=503, detail="SMTP no está configurado")

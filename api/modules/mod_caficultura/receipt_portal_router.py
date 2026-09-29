@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import date, datetime, time
 from decimal import Decimal
 from urllib.parse import quote
 import re
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, Response
@@ -101,11 +103,12 @@ def regenerate_client_portal_link(
 @router.post("/recibos/{recibo_id}/liquidar", response_model=ReciboOut)
 async def liquidate_receipt(
     recibo_id: int,
+    fecha_pago: date | None = Form(None),
     nota: str = Form(..., min_length=3, max_length=2000),
     numero_transferencia: str = Form(..., min_length=3, max_length=180),
     monto: Decimal = Form(..., gt=0, max_digits=18, decimal_places=2),
     comprobante: UploadFile = File(...),
-    current: Usuario = Depends(require_roles("gerente", "administrativo")),
+    current: Usuario = Depends(require_roles("gerente", "admin", "administrativo")),
     db: Session = Depends(get_db),
 ):
     row = recibo_query(db).filter(ReciboCafe.id == recibo_id).with_for_update().first()
@@ -129,7 +132,8 @@ async def liquidate_receipt(
     try:
         storage_key, original_name, content_type, size = await save_private_receipt_proof(comprobante, row.id)
         row.liquidado = True
-        row.liquidado_at = utcnow()
+        paid_date = fecha_pago or utcnow().date()
+        row.liquidado_at = datetime.combine(paid_date, time.min, tzinfo=ZoneInfo("America/Costa_Rica"))
         row.liquidado_por_id = current.id
         row.liquidado_por_nombre_snapshot = current.nombre
         row.liquidacion_nota = clean_note

@@ -396,6 +396,7 @@ class CompraInsumoFactura(Base):
     fecha = Column(Date, nullable=False, index=True)
     moneda = Column(String(12), nullable=False, default="CRC")
     observaciones = Column(Text, nullable=True)
+    descuento = Column(Float, nullable=False, default=0, server_default="0")
     subtotal = Column(Float, nullable=False, default=0, server_default="0")
     impuesto = Column(Float, nullable=False, default=0, server_default="0")
     total = Column(Float, nullable=False, default=0, server_default="0")
@@ -433,6 +434,7 @@ class RegistroFinca(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     fecha = Column(Date, nullable=False, index=True)
+    ispublic = Column(Boolean, nullable=False, default=False, server_default="false")
     semana_inicio = Column(Date, nullable=False, index=True)
     semana_fin = Column(Date, nullable=False, index=True)
     finca_id = Column(Integer, ForeignKey("navia_fincas.id", ondelete="SET NULL"), nullable=True, index=True)
