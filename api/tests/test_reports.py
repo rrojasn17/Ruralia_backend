@@ -97,6 +97,8 @@ def test_reports_use_registered_costs_sales_workers_and_humidity(db_session):
     metric_values = {item["label"]: item["value"] for item in profitability["metrics"]}
     assert metric_values["Costo registrado"] == 14000.0
     assert metric_values["Valor de ventas registradas"] == 100000.0
+    receipt_table = next(component for component in profitability["components"] if component["title"] == "Recibos de venta de café")
+    assert receipt_table["rows"][0]["status"] == "Pendiente"
 
     workers = build_report(db_session, ReportRequest(
         kind="workers", worker=worker.nombre, start=date(2026, 9, 1), end=date(2026, 9, 30)

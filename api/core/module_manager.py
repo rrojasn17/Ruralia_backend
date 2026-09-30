@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import zipfile
+from io import BytesIO
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -43,42 +44,66 @@ def module_to_dict(row: AppModule) -> dict[str, Any]:
 
 
 def sync_builtin_modules(db: Session) -> None:
-    """Sincroniza runtimes conocidos sin instalar módulos en una base nueva.
+    """Mantiene la tienda alineada con los runtimes incluidos en el despliegue.
 
-    Una instancia recién creada conserva únicamente el core. El registro de
-    Caficultura aparece al importar su paquete desde CMS. Para una base heredada,
-    la presencia del esquema anterior se interpreta como una instalación activa.
+    Los módulos integrados siempre aparecen en la tienda del SuperAdmin. Un
+    manifiesto descargado, editado e importado se conserva mientras corresponda
+    a la misma versión del runtime. Cuando el código desplegado sube de versión,
+    la tienda vuelve al manifiesto oficial de esa nueva versión para evitar una
+    combinación incompatible entre configuración y runtime.
     """
-    for key, manifest in BUILTIN_MANIFESTS.items():
+    active_claimed = db.query(AppModule).filter(
+        AppModule.module_type == "industry",
+        AppModule.status == "active",
+    ).first() is not None
+
+    for key, runtime_manifest in BUILTIN_MANIFESTS.items():
         row = db.query(AppModule).filter(AppModule.key == key).first()
-        if not row and legacy_runtime_detected(key, db):
-            row = AppModule(
-                key=key,
-                name=manifest["name"],
-                version=manifest["version"],
-                module_type=manifest.get("module_type", "industry"),
-                description=manifest.get("description"),
-                status="active",
-                built_in=True,
-                source="legacy",
-                manifest=manifest,
-                activated_at=utcnow(),
-            )
-            db.add(row)
-            continue
+        runtime_version = str(runtime_manifest.get("version") or "1.0.0")
 
         if not row:
+            legacy_found = legacy_runtime_detected(key, db)
+            inherited_active = legacy_found and not active_claimed
+            row = AppModule(
+                key=key,
+                name=runtime_manifest["name"],
+                version=runtime_version,
+                module_type=runtime_manifest.get("module_type", "industry"),
+                description=runtime_manifest.get("description"),
+                status="active" if inherited_active else ("disabled" if legacy_found else "uninstalled"),
+                built_in=True,
+                source="legacy" if legacy_found else "builtin",
+                manifest=runtime_manifest,
+                activated_at=utcnow() if inherited_active else None,
+            )
+            db.add(row)
+            if inherited_active:
+                active_claimed = True
             continue
 
-        # Mantiene metadatos del runtime desplegado sin alterar el estado elegido
-        # por el administrador ni sustituir el manifiesto importado.
-        row.built_in = key in BUILTIN_MANIFESTS
-        if row.source in {"builtin", "legacy"}:
-            row.name = manifest["name"]
-            row.version = manifest["version"]
-            row.module_type = manifest.get("module_type", row.module_type or "industry")
-            row.description = manifest.get("description")
-            row.manifest = manifest
+        row.built_in = True
+        row.module_type = runtime_manifest.get("module_type", row.module_type or "industry")
+
+        # Un paquete editado por el SuperAdmin puede personalizar nombres, menú,
+        # roles y permisos, pero solamente para la misma versión de runtime.
+        uploaded_matches_runtime = (
+            row.source == "upload"
+            and str(row.version or "") == runtime_version
+            and isinstance(row.manifest, dict)
+            and str((row.manifest or {}).get("key") or "") == key
+        )
+        if uploaded_matches_runtime:
+            continue
+
+        # Si el despliegue trae una versión más nueva que la importada, se publica
+        # automáticamente como la versión vigente de la tienda.
+        row.name = runtime_manifest["name"]
+        row.version = runtime_version
+        row.description = runtime_manifest.get("description")
+        row.manifest = runtime_manifest
+        # Conservamos el origen/archivo importado como historial. Para módulos
+        # integrados, la descarga de la tienda siempre genera la versión oficial
+        # del runtime actualmente desplegado.
 
     db.commit()
 
@@ -279,7 +304,6 @@ def import_module_package(db: Session, filename: str, content: bytes) -> AppModu
         raise HTTPException(status_code=413, detail="El paquete de módulo supera 50 MB")
 
     try:
-        from io import BytesIO
         with zipfile.ZipFile(BytesIO(content)) as archive:
             names = archive.namelist()
             if "module.json" not in names:
@@ -303,12 +327,21 @@ def import_module_package(db: Session, filename: str, content: bytes) -> AppModu
     if module_type not in {"industry", "feature"}:
         raise HTTPException(status_code=422, detail="module_type debe ser industry o feature")
 
-    # Los contenedores de producción ejecutan /app como read-only. Los paquetes
-    # importados son datos persistentes, no código de aplicación, por lo que deben
-    # almacenarse en un volumen escribible. MODULE_PACKAGE_DIR permite override;
-    # cuando no se configura, reutilizamos AI_PRIVATE_UPLOAD_DIR (montado por
-    # docker-compose en /app/private_uploads). En desarrollo local conservamos un
-    # fallback relativo para no exigir rutas Docker.
+    runtime_manifest = BUILTIN_MANIFESTS.get(key)
+    if runtime_manifest:
+        runtime_type = str(runtime_manifest.get("module_type") or "industry")
+        runtime_version = str(runtime_manifest.get("version") or "1.0.0")
+        if module_type != runtime_type:
+            raise HTTPException(status_code=422, detail="El tipo del paquete no coincide con el módulo disponible")
+        if version != runtime_version:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"El paquete corresponde a la versión {version}, pero esta instalación usa {runtime_version}. "
+                    "Descargue la última versión desde la Tienda de módulos, edítela y vuelva a importarla."
+                ),
+            )
+
     configured_package_dir = os.getenv("MODULE_PACKAGE_DIR", "").strip()
     if configured_package_dir:
         packages_dir = Path(configured_package_dir).expanduser().resolve()
@@ -347,28 +380,71 @@ def import_module_package(db: Session, filename: str, content: bytes) -> AppModu
         ) from exc
 
     row = db.query(AppModule).filter(AppModule.key == key).first()
+    previous_status = str(row.status) if row else None
     if not row:
         row = AppModule(key=key, name=name, version=version, module_type=module_type)
         db.add(row)
+
     row.name = name
     row.version = version
     row.module_type = module_type
     row.description = str(manifest.get("description") or "").strip() or None
-    row.status = "imported"
     row.built_in = key in BUILTIN_MANIFESTS
     row.source = "upload"
-    if key in BUILTIN_MANIFESTS:
-        runtime_manifest = BUILTIN_MANIFESTS[key]
-        if module_type != runtime_manifest.get("module_type", "industry"):
-            raise HTTPException(status_code=422, detail="El tipo del paquete no coincide con el runtime desplegado")
-        manifest = runtime_manifest
-        row.name = runtime_manifest["name"]
-        row.version = runtime_manifest["version"]
-        row.module_type = runtime_manifest.get("module_type", "industry")
-        row.description = runtime_manifest.get("description")
     row.manifest = manifest
     row.package_path = str(target)
     row.checksum_sha256 = checksum
+
+    # Al reimportar un módulo ya instalado/activo solo se actualiza su paquete y
+    # configuración. No se apaga el módulo ni se obliga a repetir instalación.
+    if previous_status in {"active", "installed", "disabled"}:
+        row.status = previous_status
+    else:
+        row.status = "imported"
+
     db.commit()
     db.refresh(row)
     return row
+
+
+def export_module_package(db: Session, key: str) -> tuple[bytes, str]:
+    """Genera el ZIP editable de la versión más reciente disponible en la tienda."""
+    sync_builtin_modules(db)
+    row = db.query(AppModule).filter(AppModule.key == key).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Módulo no encontrado")
+
+    runtime_manifest = BUILTIN_MANIFESTS.get(key)
+    if runtime_manifest:
+        manifest = dict(runtime_manifest)
+        version = str(runtime_manifest.get("version") or row.version or "1.0.0")
+    else:
+        # Para módulos externos conservamos el paquete original cuando exista.
+        if row.package_path:
+            package_path = Path(row.package_path).expanduser()
+            if package_path.is_file():
+                try:
+                    return package_path.read_bytes(), package_path.name
+                except OSError as exc:
+                    raise HTTPException(status_code=503, detail="No se pudo leer el paquete guardado") from exc
+        manifest = dict(row.manifest or {})
+        version = str(row.version or manifest.get("version") or "1.0.0")
+
+    if not manifest:
+        raise HTTPException(status_code=404, detail="El módulo no tiene un paquete disponible")
+
+    readme = (
+        "RuralIA - paquete de módulo editable\n\n"
+        "Edite module.json para personalizar nombre, descripción, navegación, roles y permisos.\n"
+        "No elimine key, version, module_type, module_api_version ni minimum_core_api_version.\n"
+        "Este ZIP configura un runtime que ya forma parte de RuralIA; no contiene el código Python/Vue del módulo.\n"
+        "Después de editarlo, comprima module.json nuevamente en la raíz del ZIP e impórtelo desde la Tienda de módulos.\n"
+    )
+
+    output = BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("module.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+        archive.writestr("README_MODULO.txt", readme)
+
+    filename = f"{key}-{version}.zip"
+    return output.getvalue(), filename

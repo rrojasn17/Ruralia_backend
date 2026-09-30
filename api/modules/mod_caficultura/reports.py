@@ -55,6 +55,23 @@ class ReportRequest(BaseModel):
         return self
 
 
+@router.get("/fincas")
+def report_farms(
+    current=Depends(require_module_permission("informes:view")),
+    db: Session = Depends(get_db),
+):
+    """Return farms using the same permission as the reports page."""
+    rows = db.query(Finca).filter(Finca.activa.is_(True)).order_by(Finca.nombre.asc()).all()
+    return [
+        {
+            "id": row.id,
+            "nombre": row.nombre,
+            "cliente_nombre": row.cliente.nombre_completo if row.cliente else None,
+        }
+        for row in rows
+    ]
+
+
 def norm(value: object) -> str:
     return "".join(
         char
@@ -273,7 +290,7 @@ def build_report(db: Session, payload: ReportRequest) -> dict:
         receipt_rows = [{
             "number": receipt.numero_recibo,
             "date": str(receipt.fecha),
-            "status": "Cancelado" if receipt.liquidado else "Pendiente",
+            "status": "Liquidado" if receipt.liquidado else "Pendiente",
             "sale_value": float(_sale_value(receipt)),
             "paid": float(receipt.liquidacion_monto or 0),
             "path": f"/recibos/{receipt.id}",

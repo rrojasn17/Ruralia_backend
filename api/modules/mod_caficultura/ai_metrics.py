@@ -101,20 +101,23 @@ def _resolve_named(rows: list[Any], query: str, fields: tuple[str, ...], label: 
     for row in rows:
         values = [str(getattr(row, field, "") or "") for field in fields]
         haystack = " ".join(values)
-        normalized = _norm(haystack)
-        if needle == normalized or needle in {_norm(value) for value in values if value}:
+        normalized_values = [_norm(value) for value in values if value]
+        # Compare each field separately: codes/owners must not dilute a name match.
+        variants = normalized_values + [value.removeprefix("finca ").strip() for value in normalized_values]
+        if needle in variants:
             score = 1.0
-        elif needle in normalized:
+        elif len(needle) >= 3 and any(needle in value for value in variants):
             score = 0.92
         else:
-            score = SequenceMatcher(None, needle, normalized).ratio()
-        if score >= 0.48:
+            score = max((SequenceMatcher(None, needle.removeprefix("finca "), value).ratio()
+                         for value in variants), default=0.0) if len(needle) >= 4 else 0.0
+        if score >= 0.55:
             ranked.append((score, row, haystack))
     ranked.sort(key=lambda item: (-item[0], getattr(item[1], "id", 0)))
 
     if not ranked:
         return {"ok": False, "needs_clarification": True, "message": f"No encontré {label} con '{query}'."}
-    if len(ranked) > 1 and ranked[0][0] - ranked[1][0] < 0.08:
+    if ranked[0][0] < 0.82 or (len(ranked) > 1 and ranked[0][0] - ranked[1][0] < 0.08):
         options = [
             {"id": item[1].id, "label": item[2]}
             for item in ranked[:5]
@@ -122,10 +125,10 @@ def _resolve_named(rows: list[Any], query: str, fields: tuple[str, ...], label: 
         return {
             "ok": False,
             "needs_clarification": True,
-            "message": f"Encontré varias opciones para {label}. ¿Cuál desea usar?",
+            "message": f"Encontré posibles coincidencias para {label}. ¿Cuál desea usar?",
             "options": options,
         }
-    return {"ok": True, "row": ranked[0][1]}
+    return {"ok": True, "row": ranked[0][1], "match_score": ranked[0][0], "matched_label": ranked[0][2]}
 
 
 def resolve_client(db: Session, query: str) -> dict[str, Any]:

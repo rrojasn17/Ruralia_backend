@@ -9,6 +9,7 @@ from core.module_manager import (
     activate_module,
     get_active_industry_module,
     install_module,
+    sync_builtin_modules,
 )
 from database import Base
 
@@ -123,3 +124,71 @@ def test_core_does_not_import_industry_implementations():
         if "modules.mod_" in text:
             offenders.append(str(path.relative_to(core_dir)))
     assert offenders == []
+
+
+
+def test_builtin_modules_are_available_in_superadmin_store(tmp_path):
+    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'module_store.sqlite3'}", future=True)
+    Session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(
+        bind=engine,
+        tables=[
+            ConfiguracionSistema.__table__,
+            Usuario.__table__,
+            SesionUsuario.__table__,
+            PasswordResetToken.__table__,
+            AppModule.__table__,
+        ],
+    )
+    db = Session()
+    try:
+        sync_builtin_modules(db)
+        rows = {row.key: row for row in db.query(AppModule).all()}
+        assert set(BUILTIN_MANIFESTS).issubset(rows)
+        assert rows["mod_caficultura"].version == BUILTIN_MANIFESTS["mod_caficultura"]["version"]
+        assert rows["mod_floresvolcan"].version == BUILTIN_MANIFESTS["mod_floresvolcan"]["version"]
+        assert rows["mod_floresvolcan"].status == "uninstalled"
+        assert get_active_industry_module(db) is None
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_store_sync_updates_builtin_version_without_changing_status(tmp_path):
+    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'module_store_update.sqlite3'}", future=True)
+    Session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(
+        bind=engine,
+        tables=[
+            ConfiguracionSistema.__table__,
+            Usuario.__table__,
+            SesionUsuario.__table__,
+            PasswordResetToken.__table__,
+            AppModule.__table__,
+        ],
+    )
+    db = Session()
+    try:
+        manifest = dict(BUILTIN_MANIFESTS["mod_caficultura"])
+        old = AppModule(
+            key="mod_caficultura",
+            name="Caficultura",
+            version="1.0.0",
+            module_type="industry",
+            status="disabled",
+            built_in=True,
+            source="upload",
+            manifest={**manifest, "version": "1.0.0"},
+        )
+        db.add(old)
+        db.commit()
+
+        sync_builtin_modules(db)
+        db.refresh(old)
+        assert old.version == BUILTIN_MANIFESTS["mod_caficultura"]["version"]
+        assert old.manifest["version"] == BUILTIN_MANIFESTS["mod_caficultura"]["version"]
+        assert old.status == "disabled"
+        assert old.source == "upload"
+    finally:
+        db.close()
+        engine.dispose()

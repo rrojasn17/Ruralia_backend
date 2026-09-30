@@ -16,6 +16,7 @@ from core.module_manager import (
     collect_user_delete_blockers,
     deactivate_module,
     effective_permissions,
+    export_module_package,
     ensure_superadmin,
     get_active_industry_module,
     import_module_package,
@@ -299,6 +300,20 @@ def module_runtime(current: Usuario = Depends(get_current_user), db: Session = D
 async def import_module(file: UploadFile = File(...), current: Usuario = Depends(get_current_user), db: Session = Depends(get_db)):
     ensure_superadmin(current)
     return module_to_dict(import_module_package(db, file.filename or "module.zip", await file.read()))
+
+
+@router.get("/modules/{key}/download")
+def download_module(key: str, current: Usuario = Depends(get_current_user), db: Session = Depends(get_db)):
+    ensure_superadmin(current)
+    content, filename = export_module_package(db, key)
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.post("/modules/{key}/install", response_model=ModuleOut)

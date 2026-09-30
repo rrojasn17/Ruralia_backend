@@ -75,6 +75,13 @@ Política operativa obligatoria de NAVIA:
   orden de compra adjunta; nunca afirmes que fue guardada hasta que la tarjeta sea confirmada y ejecutada.
 - Para registrar una actividad agrícola usa prepare_farm_activity. Presenta finca, actividad, fecha y detalle
     en una tarjeta y espera confirmación explícita antes de guardar.
+- Al registrar, llama prepare_farm_activity con los datos ya escritos o transcritos, aunque haya errores
+  ortográficos. La herramienta resuelve coincidencias contra catálogos. Usa sus nombres canónicos en el
+  resumen y menciona las correcciones; no pidas confirmar cada coincidencia si la herramienta la resolvió.
+  "Abonamos" corresponde a fertilización si el catálogo devuelve una opción única. Si hay ambigüedad,
+  pregunta solo por ese dato y conserva finca, fecha, horas e insumos de los mensajes anteriores.
+  No adivines quién es "yo": resuelve al trabajador del catálogo o pregunta su nombre. No omitas personas
+  ni reduzcas cantidades para ajustarlas al inventario. La confirmación final sigue siendo obligatoria.
 - Ante preguntas sobre si conviene realizar una actividad en una finca, consulta la finca por nombre y reúne
     días desde la última fertilización, actividad y costos, inventario disponible, recibos y humedad de sensores.
     Diferencia lecturas ausentes o antiguas de condiciones normales; no inventes dosis, productos ni diagnósticos.
@@ -86,6 +93,8 @@ Política operativa obligatoria de NAVIA:
 - Está absolutamente prohibido borrar, eliminar, anular o ejecutar acciones destructivas. No existe ninguna
   herramienta de borrado. No intentes simularla ni solicitar confirmación para ella.
 - Resume en texto lo esencial y evita repetir fila por fila cuando ya existe una tabla, gráfica o documento.
+- Si una herramienta devuelve una tabla visual, NO escribas otra tabla en Markdown ni uses filas con caracteres |---|.
+  Limítate a una frase breve de contexto y, si corresponde, una pregunta sencilla para continuar.
 """.strip()
 
 DEFAULT_CAPABILITIES = [
@@ -108,6 +117,25 @@ def _upgrade_agent_capabilities(agent: AIAgent) -> None:
     merged = list(dict.fromkeys([*current, *DEFAULT_CAPABILITIES]))
     if merged != current:
         agent.capabilities = merged
+
+
+def _clean_rich_response_text(text: str, components: list[dict[str, Any]]) -> str:
+    """Evita mostrar tablas Markdown duplicadas cuando la UI ya recibió una tabla visual."""
+    if not any(component.get("type") == "data_table" for component in components):
+        return text.strip()
+
+    clean_lines: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        looks_like_table_row = stripped.startswith("|") and stripped.endswith("|") and "|" in stripped
+        looks_like_table_separator = bool(re.fullmatch(r"\|?[\s:|-]+\|[\s:|-|]*\|?", stripped))
+        if looks_like_table_row or looks_like_table_separator:
+            continue
+        clean_lines.append(line)
+
+    cleaned = "\n".join(clean_lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned or "Los datos solicitados se muestran a continuación."
 
 
 def _normalize_intent(value: object) -> str:
@@ -567,19 +595,21 @@ TOOLS = [
         "description": (
             "Prepara, pero NO guarda, el registro de una actividad agrícola en una finca. "
             "Resuelve la finca y la actividad contra los catálogos; solicita aclaración si hay ambigüedad. "
-            "La escritura siempre requiere confirmación humana."
+            "Incluye todos los trabajadores, horas, jornales e insumos dictados o escritos. No inventes cantidades; usa null para pedir datos faltantes y [] si no se mencionan. La escritura siempre requiere confirmación humana."
         ),
         "strict": True,
         "parameters": {
             "type": "object",
             "properties": {
+                "workers": {'type': 'array', 'items': {'type': 'object', 'properties': {'name': {'type': 'string'}, 'hours': {'type': ['number', 'null']}, 'daily_wage': {'type': ['number', 'null']}}, 'required': ['name', 'hours', 'daily_wage'], 'additionalProperties': False}},
+                "supplies": {'type': 'array', 'items': {'type': 'object', 'properties': {'name': {'type': 'string'}, 'quantity': {'type': ['number', 'null']}, 'unit': {'type': ['string', 'null']}, 'unit_cost': {'type': ['number', 'null']}}, 'required': ['name', 'quantity', 'unit', 'unit_cost'], 'additionalProperties': False}},
                 "farm_name": {"type": "string"},
                 "activity_name": {"type": "string"},
                 "date": _nullable({"type": "string", "description": "AAAA-MM-DD"}),
                 "description": _nullable({"type": "string"}),
                 "observations": _nullable({"type": "string"}),
             },
-            "required": ["farm_name", "activity_name", "date", "description", "observations"],
+            "required": ["workers", "supplies", "farm_name", "activity_name", "date", "description", "observations"],
             "additionalProperties": False,
         },
     },
@@ -1072,6 +1102,7 @@ def process_message(
                 "guided_flow",
             }:
                 components.append(component)
+    text = _clean_rich_response_text(text, components)
     assistant = AIMessage(
         conversation_id=conversation.id,
         role="assistant",

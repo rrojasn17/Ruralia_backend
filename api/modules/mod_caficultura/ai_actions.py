@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import re
 import os
 import shutil
 import unicodedata
@@ -20,6 +22,8 @@ from config import AI_ACTION_EXPIRY_MINUTES, APP_BASE_URL
 from modules.mod_caficultura.model_ai_consulting import AIAttachment, AIAuditLog, AIConversation, AIMessage, AIPendingAction
 from modules.mod_caficultura.models import (
     ActividadFinca,
+    TrabajadorFinca,
+    InsumoFinca,
     Cliente,
     ComentarioLote,
     DocumentoLote,
@@ -32,7 +36,7 @@ from modules.mod_caficultura.models import (
 )
 from core.models import Usuario
 from modules.mod_caficultura.schemas import ReciboCreate
-from modules.mod_caficultura.ai_metrics import resolve_client, resolve_farm, resolve_lot
+from modules.mod_caficultura.ai_metrics import _resolve_named, resolve_client, resolve_farm, resolve_lot
 from services.ai_storage import resolve_storage_path, safe_original_name
 from modules.mod_caficultura.services import create_recibo_from_payload, next_code, serialize_recibo
 
@@ -54,6 +58,8 @@ def _float_or_none(value: Any) -> float | None:
         numeric = float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"'{value}' no es un número válido") from exc
+    if not math.isfinite(numeric):
+        raise ValueError("El valor debe ser un número finito")
     if numeric < 0:
         raise ValueError("Los valores numéricos no pueden ser negativos")
     return numeric
@@ -254,6 +260,8 @@ def prepare_farm_activity_action(
     message: AIMessage,
     arguments: dict[str, Any],
 ) -> dict[str, Any]:
+    from core.routers.auth import require_roles
+    require_roles("gerente", "administrativo", "supervisor_finca")(user)
     farm_name = str(arguments.get("farm_name") or "").strip()
     activity_name = str(arguments.get("activity_name") or "").strip()
     if not farm_name:
@@ -279,26 +287,59 @@ def prepare_farm_activity_action(
             "options": [{"id": row.id, "label": f"{row.nombre} · {row.tipo}"} for row in activities[:20]],
         }
     normalized_name = _normalize_activity_name(activity_name)
-    matches = [
-        row for row in activities
-        if normalized_name == _normalize_activity_name(row.nombre)
-        or normalized_name in _normalize_activity_name(row.nombre)
-        or normalized_name in _normalize_activity_name(row.tipo)
-    ]
-    if len(matches) != 1:
-        return {
-            "ok": False,
-            "needs_clarification": True,
-            "message": "No pude identificar una actividad única del catálogo. Elija una opción.",
-            "options": [{"id": row.id, "label": f"{row.nombre} · {row.tipo}"} for row in (matches or activities)[:20]],
-        }
-
-    activity = matches[0]
+    # Common spoken verbs map to catalog categories, never to invented activities.
+    for pattern, category in ((r"\b(abon\w*|fertiliz\w*)", "fertiliz"),
+                              (r"\b(chapi\w*|chapear|chapea\w*)", "chapi"),
+                              (r"\b(poda\w*)", "poda")):
+        if re.search(pattern, normalized_name):
+            candidates = [row for row in activities if re.search(pattern, _normalize_activity_name(f"{row.nombre} {row.tipo}"))]
+            if len(candidates) == 1:
+                normalized_name = candidates[0].nombre
+            break
+    resolved_activity = _resolve_named(activities, normalized_name, ("nombre", "tipo"), "la actividad")
+    if not resolved_activity.get("ok"):
+        return resolved_activity
+    activity = resolved_activity["row"]
     raw_date = str(arguments.get("date") or "").strip()
     try:
         activity_date = date.fromisoformat(raw_date) if raw_date else date.today()
     except ValueError:
         return {"ok": False, "needs_clarification": True, "message": "La fecha debe usar el formato AAAA-MM-DD."}
+
+    # Resolve names from speech against real catalogs; never guess ambiguous people or supplies.
+    details = {"trabajadores": [], "insumos": []}
+    detail_labels = []
+    for key, model, id_key in (("workers", TrabajadorFinca, "trabajador_id"), ("supplies", InsumoFinca, "insumo_id")):
+        seen = set()
+        for item in arguments.get(key) or []:
+            name = _normalize_activity_name(item.get("name"))
+            rows = db.query(model).filter(model.activo.is_(True)).all()
+            resolved = _resolve_named(rows, name, ("nombre",), "el trabajador" if key == "workers" else "el insumo")
+            if not resolved.get("ok"):
+                return resolved
+            selected = resolved["row"]
+            if selected.id in seen:
+                return {"ok": False, "needs_clarification": True, "message": f"Indique un único total para {selected.nombre}."}
+            seen.add(selected.id)
+            try:
+                amount = _float_or_none(item.get("hours" if key == "workers" else "quantity"))
+                if amount is None or (key == "supplies" and amount <= 0):
+                    raise ValueError(f"Indique {'horas' if key == 'workers' else 'cantidad'} para {selected.nombre}.")
+                if key == "workers":
+                    wage = _float_or_none(item.get("daily_wage"))
+                    wage = selected.jornal_diario if wage is None else wage
+                    details["trabajadores"].append({id_key: selected.id, "horas": amount, "jornal": wage})
+                    detail_labels.append(f"{selected.nombre}: {amount:g} horas, jornal {wage if wage is not None else 'sin tarifa'}")
+                else:
+                    unit = str(item.get("unit") or "").strip()
+                    if _normalize_activity_name(unit) != _normalize_activity_name(selected.unidad):
+                        raise ValueError(f"Indique la cantidad de {selected.nombre} en {selected.unidad}.")
+                    cost = _float_or_none(item.get("unit_cost"))
+                    cost = (selected.precio_unitario if selected.precio_unitario is not None else selected.costo_unitario) if cost is None else cost
+                    details["insumos"].append({id_key: selected.id, "cantidad": amount, "unidad": selected.unidad, "costo_unitario": cost})
+                    detail_labels.append(f"{selected.nombre}: {amount:g} {selected.unidad}, costo unitario {cost if cost is not None else 'sin tarifa'}")
+            except ValueError as exc:
+                return {"ok": False, "needs_clarification": True, "message": str(exc)}
 
     description = str(arguments.get("description") or activity.nombre).strip()[:255]
     observations = str(arguments.get("observations") or "").strip()[:4000] or None
@@ -307,11 +348,13 @@ def prepare_farm_activity_action(
         "farm_name": farm.nombre,
         "activity_id": activity.id,
         "activity_name": activity.nombre,
+        **details,
         "date": activity_date.isoformat(),
         "description": description,
         "observations": observations,
     }
     summary = f"Registrar {activity.nombre} en {farm.nombre} el {activity_date.isoformat()}"
+    summary += f". Detalle: {description}. " + ("; ".join(detail_labels) or "Sin trabajadores ni insumos indicados")
     if observations:
         summary += f". Observación: {observations}"
     action = _create_pending_action(
@@ -655,6 +698,11 @@ def _execute_receipt(db: Session, action: AIPendingAction, user: Usuario) -> dic
 
 
 def _execute_farm_activity(db: Session, action: AIPendingAction, user: Usuario) -> dict[str, Any]:
+    from core.routers.auth import require_roles
+    from modules.mod_caficultura.router import apply_registro_finca_items
+    from modules.mod_caficultura.schemas import RegistroFincaCreate
+
+    require_roles("gerente", "administrativo", "supervisor_finca")(user)
     payload = dict(action.payload or {})
     farm = db.query(Finca).filter(
         Finca.id == int(payload["farm_id"]),
@@ -682,8 +730,13 @@ def _execute_farm_activity(db: Session, action: AIPendingAction, user: Usuario) 
         observaciones=payload.get("observations"),
         created_by_id=user.id,
     )
+    validated = RegistroFincaCreate.model_validate({
+        "fecha": activity_date, "finca_id": farm.id, "actividad_id": activity.id,
+        "trabajadores": payload.get("trabajadores", []), "insumos": payload.get("insumos", []),
+    })
     db.add(row)
     db.flush()
+    apply_registro_finca_items(db, row, validated)
     return {
         "entity": "farm_activity",
         "id": row.id,

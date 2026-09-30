@@ -1,7 +1,7 @@
 {
   "key": "mod_caficultura",
   "name": "Caficultura",
-  "version": "1.6.0",
+  "version": "1.6.3",
   "module_type": "industry",
   "description": "Gestión de fincas cafetaleras, insumos, recibos, lotes, trazabilidad y ventas.",
   "icon": "i-lucide-coffee",
@@ -157,6 +157,22 @@
   },
   "navigation": [
     {
+      "label": "GPT Café",
+      "to": "/iaconsulting",
+      "icon": "i-lucide-message-circle-heart",
+      "permission": "ai:view",
+      "training_id": "nav-ai",
+      "top_level": true
+    },
+    {
+      "group": "Finca",
+      "label": "Gestión de Fincas",
+      "to": "/gestionfincas",
+      "icon": "i-lucide-tractor",
+      "permission": "gestionfincas:view",
+      "training_id": "nav-farm-management"
+    },
+    {
       "group": "Beneficiado",
       "label": "Recibos",
       "to": "/recibos",
@@ -166,7 +182,7 @@
     },
     {
       "group": "Beneficiado",
-      "label": "Solicitud Venta",
+      "label": "Solicitud de Venta",
       "to": "/solicitudes-venta",
       "icon": "i-lucide-hand-coins",
       "permission": "ventas:view",
@@ -186,7 +202,8 @@
       "to": "/lotes-aprobados",
       "icon": "i-lucide-badge-check",
       "permission": "ventas:view",
-      "training_id": "nav-approved-lots"
+      "training_id": "nav-approved-lots",
+      "parent": "Lotes"
     },
     {
       "group": "Beneficiado",
@@ -194,31 +211,8 @@
       "to": "/lotes-vendidos",
       "icon": "i-lucide-truck",
       "permission": "ventas:view",
-      "training_id": "nav-sold-lots"
-    },
-    {
-      "group": "Finca",
-      "label": "Gestión fincas",
-      "to": "/gestionfincas",
-      "icon": "i-lucide-tractor",
-      "permission": "gestionfincas:view",
-      "training_id": "nav-farm-management"
-    },
-    {
-      "group": "Gestión",
-      "label": "Informes",
-      "to": "/informes",
-      "icon": "i-lucide-chart-no-axes-combined",
-      "permission": "informes:view",
-      "training_id": "nav-reports"
-    },
-    {
-      "group": "Gestión",
-      "label": "Consultoría IA",
-      "to": "/iaconsulting",
-      "icon": "i-lucide-bot",
-      "permission": "ai:view",
-      "training_id": "nav-ai"
+      "training_id": "nav-sold-lots",
+      "parent": "Lotes"
     },
     {
       "group": "Gestión",
@@ -243,6 +237,14 @@
       "icon": "i-lucide-package",
       "permission": "insumos:view",
       "training_id": "nav-supplies"
+    },
+    {
+      "group": "Gestión",
+      "label": "Informes",
+      "to": "/informes",
+      "icon": "i-lucide-chart-no-axes-combined",
+      "permission": "informes:view",
+      "training_id": "nav-reports"
     },
     {
       "group": "Administración módulo",
