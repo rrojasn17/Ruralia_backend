@@ -63,6 +63,7 @@ from modules.mod_caficultura.schema_iot import (
     normalize_node_did,
 )
 from security import generar_token, hash_token
+from modules.mod_caficultura.iot_formulas import calculated_series
 
 
 router = APIRouter(prefix="/iot", tags=["iot"])
@@ -905,6 +906,10 @@ def get_farm_telemetry(
     )
     truncated = len(rows) > IOT_MAX_QUERY_ROWS
     rows = rows[:IOT_MAX_QUERY_ROWS]
+    preset = db.query(IoTDashboardPreset).filter(
+        IoTDashboardPreset.usuario_id == current.id,
+        IoTDashboardPreset.finca_id == finca_id,
+    ).first()
     return {
         "finca": {
             "id": finca.id,
@@ -930,6 +935,7 @@ def get_farm_telemetry(
             for row in rows
         ],
         "truncated": truncated,
+        "calculated": calculated_series(preset.widgets if preset else [], rows),
     }
 
 
@@ -1059,6 +1065,10 @@ def save_dashboard_preset(
                 status_code=422,
                 detail="Un widget referencia una variable no disponible",
             )
+        for source in widget.inputs.values():
+            source_node = node_map.get(source.node_id)
+            if not source_node or source.variable_id not in (source_node.variables_config or {}):
+                raise HTTPException(status_code=422, detail="La fórmula referencia una variable no disponible en esta finca")
         widget_id = widget.id.strip()
         if widget_id in seen:
             raise HTTPException(

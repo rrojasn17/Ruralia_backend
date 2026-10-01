@@ -66,6 +66,12 @@ Reglas obligatorias:
 
 RUNTIME_GUARDRAILS = """
 Política operativa obligatoria de NAVIA:
+- Para condiciones ambientales, clima observado, temperatura, humedad o sensores de una finca usa
+  get_business_metric con metric=farm_sensor_analysis y farm_name con el nombre indicado. Esta herramienta
+  devuelve inventario de sensores y todas sus variables, no solo humedad. Consulta antes de afirmar que
+  una finca no tiene sensores. Distingue sensores registrados sin lecturas recientes de ausencia de sensores.
+  Informa unidades, período y fecha de última lectura por variable. No presentes datos antiguos como actuales.
+  La telemetría describe observaciones, no un pronóstico ni un diagnóstico agronómico.
 - Para listados usa query_operational_data. Si el usuario pide listar, entrega el componente de tabla devuelto.
 - "Recibo liquidado", "recibo pagado" y sus plurales son estados de pago de recibos: consulta siempre
   dataset=receipts con status=liquidado. Nunca uses latest_alerts para responder sobre liquidaciones.
@@ -151,6 +157,11 @@ def _matches_any_token(
         for token in tokens
         for target in targets
     )
+
+
+def _is_environmental_query(message: str) -> bool:
+    text = _normalize_intent(message)
+    return bool(re.search(r"\b(ambient\w*|temperatura\w*|humedad|clima|sensor\w*|telemetria)\b", text))
 
 
 def _direct_operational_request(message: str) -> dict[str, Any] | None:
@@ -413,7 +424,9 @@ TOOLS = [
         "name": "get_business_metric",
         "description": (
             "Consulta cifras y estados reales de NAVIA. Úsala para gastos, café recibido, café en patio, "
-            "trabajadores, pendientes, alertas, lotes, actividad agrícola, inventario, ventas, QR y resumen general."
+            "trabajadores, pendientes, alertas, lotes, actividad agrícola, inventario, ventas, QR y resumen general. "
+            "Para condiciones ambientales, temperatura, clima o sensores de una finca usa farm_sensor_analysis: "
+            "devuelve sensores registrados y todas las variables medidas, incluso si no existe humedad."
         ),
         "strict": True,
         "parameters": {
@@ -1033,13 +1046,17 @@ def process_message(
         f"{_brand_text(RUNTIME_GUARDRAILS, platform_name)}\n\n"
         f"Fecha operativa actual: {date.today().isoformat()}."
     )
-    for _ in range(AI_MAX_TOOL_ROUNDS):
+    for round_index in range(AI_MAX_TOOL_ROUNDS):
         response = client.responses.create(
             model=model,
             instructions=runtime_instructions,
             input=input_items,
             tools=TOOLS,
-            tool_choice="auto",
+            tool_choice=(
+                {"type": "function", "name": "get_business_metric"}
+                if round_index == 0 and _is_environmental_query(user_message.content)
+                else "auto"
+            ),
             max_output_tokens=max(
                 300, min(int(agent.max_output_tokens or AI_MAX_OUTPUT_TOKENS), 8000)
             ),

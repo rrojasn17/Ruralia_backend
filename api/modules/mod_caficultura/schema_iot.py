@@ -225,6 +225,12 @@ class IoTTelemetryOut(BaseModel):
     nodes: list[IoTNodeOut]
     readings: list[IoTReadingOut]
     truncated: bool = False
+    calculated: dict[str, Any] = Field(default_factory=dict)
+
+
+class IoTFormulaInput(BaseModel):
+    node_id: int = Field(gt=0)
+    variable_id: str = Field(min_length=1, max_length=80)
 
 
 class IoTWidgetIn(BaseModel):
@@ -232,6 +238,7 @@ class IoTWidgetIn(BaseModel):
     node_id: int = Field(gt=0)
     variable_id: str = Field(min_length=1, max_length=80)
     kind: WidgetKind = "line"
+    hidden: bool = False
     title: str | None = Field(default=None, max_length=180)
     color: str | None = Field(
         default=None, max_length=20, pattern=r"^(#[0-9A-Fa-f]{3,8}|[a-zA-Z]{3,20})$"
@@ -240,6 +247,29 @@ class IoTWidgetIn(BaseModel):
     minimum: float | None = Field(default=None, allow_inf_nan=False)
     maximum: float | None = Field(default=None, allow_inf_nan=False)
     order: int = Field(default=1, ge=1, le=500)
+    formula: str | None = Field(default=None, min_length=1, max_length=500)
+    inputs: dict[str, IoTFormulaInput] = Field(default_factory=dict, max_length=16)
+    unit: str | None = Field(default=None, max_length=30)
+    max_gap_minutes: int = Field(default=15, ge=0, le=1440)
+
+    @model_validator(mode="after")
+    def validate_formula(self):
+        from modules.mod_caficultura.iot_formulas import FUNCTIONS, parse_formula
+
+        if self.formula is not None:
+            if not self.inputs:
+                raise ValueError("Seleccione las variables de la fórmula")
+            if any(not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]{0,29}", alias) or alias in FUNCTIONS for alias in self.inputs):
+                raise ValueError("Alias de variable inválido o reservado")
+            parse_formula(self.formula, set(self.inputs))
+            anchor = next(iter(self.inputs.values()))
+            if (self.node_id, self.variable_id) != (anchor.node_id, anchor.variable_id):
+                raise ValueError("El sensor y variable base deben coincidir con la primera entrada")
+        elif self.inputs:
+            raise ValueError("Indique una fórmula para las variables seleccionadas")
+        if self.minimum is not None and self.maximum is not None and self.minimum >= self.maximum:
+            raise ValueError("El mínimo debe ser menor que el máximo")
+        return self
 
 
 class IoTDashboardPresetIn(BaseModel):

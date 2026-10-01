@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from typing import Any
 
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -44,7 +45,7 @@ METRIC_OPTIONS = [
     {"value": "lot_status", "label": "Estado integral de un lote"},
     {"value": "farm_activity", "label": "Actividad y costos de finca"},
     {"value": "days_since_fertilization", "label": "Días desde última fertilización"},
-    {"value": "farm_sensor_analysis", "label": "Humedad ambiental por sensores"},
+    {"value": "farm_sensor_analysis", "label": "Condiciones ambientales y sensores de finca"},
     {"value": "inventory_status", "label": "Inventario de insumos"},
     {"value": "sales_summary", "label": "Resumen de ventas"},
     {"value": "business_overview", "label": "Resumen general del negocio"},
@@ -184,7 +185,13 @@ def farm_sensor_analysis(db: Session, parameters: dict[str, Any]) -> dict[str, A
     if not resolved.get("ok"):
         return resolved
     farm: Finca = resolved["row"]
+    # Import lazily: the farm assistant reuses the general agent configuration.
+    from modules.mod_caficultura.ai_farm_agent import analyze_farm_telemetry, farm_sensor_inventory
+
+    inventory = jsonable_encoder(farm_sensor_inventory(db, farm.id))
     hours = min(max(int(parameters.get("hours") or 24), 1), 168)
+    telemetry = jsonable_encoder(analyze_farm_telemetry(db, farm.id, {"hours": hours}))
+    node_metadata = {node["id"]: node["variables"] for node in inventory["nodes"]}
     humidity_threshold = min(max(float(parameters.get("humidity_threshold") or 85), 0), 100)
     max_gap_hours = min(max(float(parameters.get("max_gap_hours") or 2), 0.25), 6)
     now = datetime.now(timezone.utc)
@@ -208,13 +215,16 @@ def farm_sensor_analysis(db: Session, parameters: dict[str, Any]) -> dict[str, A
         values = raw_values if isinstance(raw_values, dict) else {}
         humidity_values = []
         for key, value in values.items():
-            normalized = _norm(key).replace("_", "").replace("-", "")
+            meta = node_metadata.get(node_id, {}).get(key) or {}
+            normalized = _norm(" ".join(str(item or "") for item in (key, meta.get("label"), meta.get("source_key")))).replace("_", "").replace("-", "")
             if "humed" not in normalized and "humidity" not in normalized:
                 continue
             if "suelo" in normalized or "soil" in normalized:
                 continue
             try:
-                humidity_values.append(float(value))
+                numeric = float(value)
+                if math.isfinite(numeric) and 0 <= numeric <= 100:
+                    humidity_values.append(numeric)
             except (TypeError, ValueError):
                 continue
         if not humidity_values:
@@ -262,6 +272,19 @@ def farm_sensor_analysis(db: Session, parameters: dict[str, Any]) -> dict[str, A
     return {
         "ok": True,
         "metric": "farm_sensor_analysis",
+        "sensor_count": len(inventory["nodes"]),
+        "active_sensor_count": sum(bool(node["active"]) for node in inventory["nodes"]),
+        "nodes": inventory["nodes"],
+        "variables": telemetry.get("variables", []),
+        "period": telemetry.get("period"),
+        "reading_rows": telemetry.get("reading_rows", 0),
+        "truncated": telemetry.get("truncated", False),
+        "environmental_summary": (
+            f"La finca {farm.nombre} tiene {len(inventory['nodes'])} sensores registrados y "
+            f"{telemetry.get('reading_rows', 0)} lecturas en las últimas {hours} horas. "
+            "Consulte variables para temperatura, humedad y otras mediciones disponibles; "
+            "la ausencia de lecturas recientes no significa ausencia de sensores."
+        ),
         "farm": {"id": farm.id, "name": farm.nombre},
         "period_hours": hours,
         "humidity_threshold": humidity_threshold,

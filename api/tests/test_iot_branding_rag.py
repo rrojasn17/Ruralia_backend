@@ -377,3 +377,58 @@ def test_rag_documents_are_private_indexed_and_scoped_to_the_agent():
             client.delete(f"/ai/knowledge-documents/{document['id']}").status_code
             == 204
         )
+
+
+def test_iot_calculated_widgets_persist_and_respect_farm_scope():
+    farm, other_farm = _create_farm_pair()
+    suffix = uuid.uuid4().hex[:8]
+    with TestClient(app) as client:
+        client.headers['X-Forwarded-For'] = '198.51.100.119'
+        _login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
+        node = client.post('/iot/nodes', json={
+            'finca_id': farm.id, 'nombre': 'Estación calculada', 'did': f'CALC-{suffix}',
+            'tipo': 'microcontrolador', 'variables_config': {
+                'temp': {'source_key': 'temp', 'label': 'Temperatura', 'unit': '°C'},
+                'rh': {'source_key': 'rh', 'label': 'Humedad ambiental', 'unit': '%'},
+            },
+        }).json()
+        from datetime import datetime, timezone
+        from modules.mod_caficultura.model_iot import IoTReading
+        with SessionLocal() as db:
+            db.add(IoTReading(node_id=node['id'], recorded_at=datetime.now(timezone.utc), data={'temp': 25, 'rh': 80}))
+            db.commit()
+        endpoint = f'/iot/fincas/{farm.id}/dashboard-preset'
+        assert client.get(endpoint).json()['id'] is None
+        widget = {
+            'id': 'fahrenheit', 'node_id': node['id'], 'variable_id': 'temp',
+            'formula': 'x1 * 9 / 5 + 32', 'inputs': {'x1': {'node_id': node['id'], 'variable_id': 'temp'}},
+            'unit': '°F', 'color': '#aa1122', 'kind': 'gauge', 'decimals': 1,
+            'minimum': 0, 'maximum': 120, 'hidden': True,
+        }
+        saved = client.put(endpoint, json={'widgets': [widget]})
+        assert saved.status_code == 200, saved.text
+        loaded = client.get(endpoint).json()
+        assert loaded['id'] is not None
+        assert len(loaded['widgets']) == 1
+        assert all(loaded['widgets'][0][key] == value for key, value in widget.items())
+        telemetry = client.get(f'/iot/fincas/{farm.id}/telemetry?hours=24').json()
+        assert telemetry['calculated']['fahrenheit']['points'][0]['value'] == 77
+        foreign = client.post('/iot/nodes', json={
+            'finca_id': other_farm.id, 'nombre': 'Otra finca', 'did': f'FOREIGN-{suffix}',
+            'tipo': 'microcontrolador', 'variables_config': {'rh': {'source_key': 'rh', 'label': 'Humedad'}},
+        }).json()
+        invalid = {**widget, 'formula': 'x1 + x2', 'inputs': {
+            **widget['inputs'], 'x2': {'node_id': foreign['id'], 'variable_id': 'rh'},
+        }}
+        assert client.put(endpoint, json={'widgets': [invalid]}).status_code == 422
+        invalid['inputs']['x2'] = {'node_id': node['id'], 'variable_id': 'missing'}
+        assert client.put(endpoint, json={'widgets': [invalid]}).status_code == 422
+        invalid['inputs']['x2'] = {'node_id': node['id'], 'variable_id': 'rh'}
+        assert client.put(endpoint, json={'widgets': [invalid]}).status_code == 200
+        telemetry = client.get(f'/iot/fincas/{farm.id}/telemetry?hours=24').json()
+        assert telemetry['calculated']['fahrenheit']['points'][0]['value'] == 105
+        assert client.put(endpoint, json={'widgets': [{**widget, 'formula': '__import__("os")'}]}).status_code == 422
+        assert client.put(endpoint, json={'widgets': []}).status_code == 200
+        empty = client.get(endpoint).json()
+        assert empty['id'] is not None and empty['widgets'] == []
+        assert client.get(f'/iot/fincas/{farm.id}/telemetry').json()['calculated'] == {}

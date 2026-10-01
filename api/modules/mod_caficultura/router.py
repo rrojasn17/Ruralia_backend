@@ -53,6 +53,7 @@ from modules.mod_caficultura.models import (
     SolicitudVentaSeguimiento,
     SolicitudVentaDocumento,
 )
+from modules.mod_caficultura.model_iot import IoTIntegration, IoTNode, IoTReading, IoTDashboardPreset
 from core.models import ConfiguracionSistema, SesionUsuario, Usuario
 from core.routers.auth import get_current_user, require_roles
 from modules.mod_caficultura.schemas import (
@@ -2419,8 +2420,25 @@ def delete_insumo_finca(insumo_id: int, current: Usuario = Depends(get_current_u
 
 
 @router.get("/gestion-fincas/registros", response_model=list[RegistroFincaOut])
-def list_registros_finca(current: Usuario = Depends(require_roles("gerente", "administrativo", "supervisor_finca")), db: Session = Depends(get_db)):
-    rows = registro_finca_query(db).order_by(RegistroFinca.fecha.desc(), RegistroFinca.id.desc()).all()
+def list_registros_finca(
+    finca_id: int | None = None,
+    desde: date | None = None,
+    hasta: date | None = None,
+    current: Usuario = Depends(require_roles("gerente", "administrativo", "supervisor_finca")),
+    db: Session = Depends(get_db),
+):
+    if desde and hasta and desde > hasta:
+        raise HTTPException(status_code=422, detail="La fecha inicial no puede ser posterior a la final")
+    query = registro_finca_query(db)
+    if finca_id is not None:
+        if not db.get(Finca, finca_id):
+            raise HTTPException(status_code=404, detail="Finca no encontrada")
+        query = query.filter(RegistroFinca.finca_id == finca_id)
+    if desde:
+        query = query.filter(RegistroFinca.fecha >= desde)
+    if hasta:
+        query = query.filter(RegistroFinca.fecha <= hasta)
+    rows = query.order_by(RegistroFinca.fecha.desc(), RegistroFinca.id.desc()).all()
     return [serialize_registro_finca(row) for row in rows]
 
 
@@ -2605,10 +2623,12 @@ async def import_gestion_fincas_catalogo(catalogo: str, file: UploadFile = File(
 
 
 
+IOT_BACKUP_MODELS = [IoTIntegration, IoTNode, IoTReading, IoTDashboardPreset]
+
 BACKUP_MODELS = [
+    Usuario,
     ConfiguracionSistema,
     ReciboConsecutivo,
-    Usuario,
     Cliente,
     Finca,
     ReciboCafe,
@@ -2639,6 +2659,7 @@ BACKUP_MODELS = [
     SolicitudVentaLineaLiquidacion,
     SolicitudVentaSeguimiento,
     SolicitudVentaDocumento,
+    *IOT_BACKUP_MODELS,
 ]
 
 RESET_DELETE_MODELS = [
@@ -2734,11 +2755,24 @@ async def importar_respaldo(file: UploadFile = File(...), current: Usuario = Dep
     except Exception:
         raise HTTPException(status_code=422, detail="El archivo no es un JSON válido de respaldo NAVIA")
 
-    if payload.get("schema") != "navia_backup_v1" or not isinstance(payload.get("tables"), dict):
+    if not isinstance(payload, dict) or payload.get("schema") != "navia_backup_v1" or not isinstance(payload.get("tables"), dict):
         raise HTTPException(status_code=422, detail="El archivo no corresponde a un respaldo NAVIA compatible")
+
+    missing_iot = [model.__tablename__ for model in IOT_BACKUP_MODELS if model.__tablename__ not in payload["tables"]]
+    warnings = []
+    if missing_iot:
+        warnings.append(
+            "Este respaldo no incluye todas las tablas IoT: " + ", ".join(missing_iot) +
+            ". Los datos ausentes no pueden recuperarse de este archivo. Exporte un nuevo respaldo desde la versión actualizada en producción."
+        )
+    for model in IOT_BACKUP_MODELS:
+        table_rows = payload["tables"].get(model.__tablename__, [])
+        if not isinstance(table_rows, list) or any(not isinstance(item, dict) or item.get("id") is None for item in table_rows):
+            raise HTTPException(status_code=422, detail=f"La tabla {model.__tablename__} contiene registros inválidos")
 
     imported = 0
     updated = 0
+    table_counts = {}
 
     try:
         for model in BACKUP_MODELS:
@@ -2747,6 +2781,7 @@ async def importar_respaldo(file: UploadFile = File(...), current: Usuario = Dep
             if not isinstance(rows, list):
                 continue
 
+            table_counts[table] = len(rows)
             columns = {column.name: column for column in model.__table__.columns}
             for item in rows:
                 if not isinstance(item, dict):
@@ -2769,6 +2804,9 @@ async def importar_respaldo(file: UploadFile = File(...), current: Usuario = Dep
                     db.add(model(**values))
                     imported += 1
 
+            # Restore parent rows before dependent IoT rows, within the same transaction.
+            db.flush()
+
         db.flush()
         from modules.mod_caficultura.sequence_repair import repair_sequences
         repair_sequences(db, BACKUP_MODELS)
@@ -2780,7 +2818,7 @@ async def importar_respaldo(file: UploadFile = File(...), current: Usuario = Dep
         db.rollback()
         raise HTTPException(status_code=500, detail=f"No se pudo importar el respaldo: {exc}")
 
-    return {"ok": True, "importados": imported, "actualizados": updated}
+    return {"ok": True, "importados": imported, "actualizados": updated, "tablas": table_counts, "advertencias": warnings}
 
 
 @router.post("/respaldos/borrado-completo")

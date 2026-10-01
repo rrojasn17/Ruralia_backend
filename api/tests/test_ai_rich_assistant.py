@@ -500,3 +500,54 @@ def test_in_app_monitoring_does_not_require_external_recipients():
                               next_run_at=datetime.now(timezone.utc), channels=['in_app'])
     assert rule.email_recipients == []
     assert _deliver(rule, 'Aviso interno') == [{'channel': 'in_app', 'status': 'sent'}]
+
+
+def test_environmental_query_finds_named_variables_and_sensors_without_recent_data(db_session, monkeypatch):
+    user, _client, farm, _lot = _seed_operational_data(db_session, 'ENVIRONMENT-IOT')
+    now = datetime.now(timezone.utc)
+    node = IoTNode(finca_id=farm.id, nombre='Estación ambiental', did='ENVIRONMENT-IOT', tipo='microcontrolador', activo=True,
+                   variables_config={'v1': {'label': 'Temperatura ambiental', 'unit': '°C'},
+                                     'v2': {'label': 'Humedad relativa', 'unit': '%', 'source_key': 'rh'},
+                                     'v3': {'label': 'Humedad suelo', 'unit': '%'}})
+    old_node = IoTNode(finca_id=farm.id, nombre='Sensor sin lecturas recientes', did='ENVIRONMENT-OLD', tipo='microcontrolador', activo=True)
+    db_session.add_all([node, old_node])
+    db_session.flush()
+    db_session.add_all([
+        IoTReading(node_id=node.id, recorded_at=now - timedelta(minutes=5), data={'v1': 25, 'v2': 80, 'v3': 99}),
+        IoTReading(node_id=old_node.id, recorded_at=now - timedelta(days=7), data={'temperature': 22}),
+    ])
+    db_session.commit()
+    result = farm_sensor_analysis(db_session, {'farm_name': farm.nombre})
+    assert result['sensor_count'] == 2
+    assert result['latest_relative_humidity'] == 80
+    assert len(result['variables']) == 3
+    assert next(item for item in result['variables'] if item['variable_id'] == 'v1')['latest'] == 25
+    agent = ensure_default_agent(db_session, user.id)
+    conversation = AIConversation(usuario_id=user.id, agent_id=agent.id, title='Ambiente', channel='web', status='active')
+    db_session.add(conversation)
+    db_session.flush()
+    message = AIMessage(conversation_id=conversation.id, role='user', content=f'¿Cómo están las condiciones ambientales de la finca {farm.nombre}?', status='completed')
+    db_session.add(message)
+    db_session.commit()
+    calls = []
+    def respond(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            assert kwargs['tool_choice'] == {'type': 'function', 'name': 'get_business_metric'}
+            return SimpleNamespace(output=[SimpleNamespace(type='function_call', name='get_business_metric',
+                arguments=json.dumps({'metric': 'farm_sensor_analysis', 'farm_name': farm.nombre}), call_id='ambient')], output_text='')
+        assert kwargs['tool_choice'] == 'auto'
+        tool_data = json.loads(kwargs['input'][-1]['output'])
+        assert tool_data['sensor_count'] == 2 and tool_data['variables']
+        return SimpleNamespace(output=[], output_text='Hay dos sensores registrados y temperatura reciente de 25 °C.')
+    monkeypatch.setattr('modules.mod_caficultura.ai_agent.openai_is_configured', lambda: True)
+    monkeypatch.setattr('modules.mod_caficultura.ai_agent._openai_client', lambda: SimpleNamespace(responses=SimpleNamespace(create=respond)))
+    answer = process_message(db_session, conversation, user, message)
+    assert answer.meta['metric_cards'][0]['sensor_count'] == 2
+    no_recent = farm_sensor_analysis(db_session, {'farm_name': farm.nombre, 'hours': 1})
+    assert no_recent['sensor_count'] == 2
+    db_session.query(IoTReading).filter(IoTReading.node_id == node.id).update({'recorded_at': now - timedelta(days=8)})
+    db_session.flush()
+    no_recent = farm_sensor_analysis(db_session, {'farm_name': farm.nombre})
+    assert no_recent['sensor_count'] == 2
+    assert no_recent['variables'] == []
