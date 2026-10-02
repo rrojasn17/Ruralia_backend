@@ -25,6 +25,8 @@ from modules.mod_caficultura.models import (
     TrabajadorFinca,
     InsumoFinca,
     Cliente,
+    Proveedor,
+    ProveedorContacto,
     ComentarioLote,
     DocumentoLote,
     Finca,
@@ -363,6 +365,105 @@ def prepare_farm_activity_action(
         user=user,
         message=message,
         action_type="create_farm_activity",
+        summary=summary,
+        payload=payload,
+    )
+    return {
+        "ok": True,
+        "requires_confirmation": True,
+        "action_public_id": action.public_id,
+        "action_version": action.version,
+        "summary": action.summary,
+        "expires_at": action.expires_at.isoformat(),
+    }
+
+
+def prepare_provider_action(
+    db: Session,
+    conversation: AIConversation,
+    user: Usuario,
+    message: AIMessage,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    from core.routers.auth import require_roles
+    require_roles("administrativo", "admin")(user)
+
+    legal_name = str(arguments.get("legal_name") or "").strip()
+    commercial_name = str(arguments.get("commercial_name") or "").strip() or None
+    identification = str(arguments.get("identification") or "").strip() or None
+    if not legal_name:
+        return {
+            "ok": False,
+            "needs_clarification": True,
+            "message": "¿Cuál es el nombre legal o nombre completo del proveedor?",
+        }
+    if len(legal_name) < 2:
+        return {"ok": False, "needs_clarification": True, "message": "El nombre del proveedor es demasiado corto."}
+
+    if identification:
+        duplicate = db.query(Proveedor).filter(Proveedor.identificacion == identification).first()
+        if duplicate:
+            return {
+                "ok": False,
+                "message": f"Ya existe un proveedor con la identificación {identification}: {duplicate.nombre_comercial or duplicate.nombre_legal}.",
+                "existing": {"id": duplicate.id, "path": "/proveedores"},
+            }
+
+    # No se bloquea por nombre, porque dos proveedores pueden compartir una razón social similar.
+
+    contacts: list[dict[str, Any]] = []
+    for raw in arguments.get("contacts") or []:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip()
+        if not name:
+            continue
+        contacts.append({
+            "nombre": name[:180],
+            "puesto": str(raw.get("position") or "").strip()[:140] or None,
+            "correo": str(raw.get("email") or "").strip()[:180] or None,
+            "telefono": str(raw.get("phone") or "").strip()[:80] or None,
+            "principal": bool(raw.get("primary", False)),
+            "activo": True,
+            "notas": str(raw.get("notes") or "").strip()[:2000] or None,
+        })
+    if contacts and not any(item["principal"] for item in contacts):
+        contacts[0]["principal"] = True
+
+    payload = {
+        "nombre_legal": legal_name[:220],
+        "nombre_comercial": commercial_name[:220] if commercial_name else None,
+        "identificacion": identification[:100] if identification else None,
+        "tipo_identificacion": str(arguments.get("identification_type") or "").strip()[:40] or None,
+        "correo": str(arguments.get("email") or "").strip()[:180] or None,
+        "telefono": str(arguments.get("phone") or "").strip()[:80] or None,
+        "sitio_web": str(arguments.get("website") or "").strip()[:500] or None,
+        "direccion": str(arguments.get("address") or "").strip()[:500] or None,
+        "provincia": str(arguments.get("province") or "").strip()[:80] or None,
+        "canton": str(arguments.get("canton") or "").strip()[:80] or None,
+        "distrito": str(arguments.get("district") or "").strip()[:80] or None,
+        "notas": str(arguments.get("notes") or "").strip()[:4000] or None,
+        "contactos": contacts,
+    }
+    summary = f"Crear proveedor {commercial_name or legal_name}"
+    details = []
+    if identification:
+        details.append(f"identificación {identification}")
+    if payload["telefono"]:
+        details.append(f"teléfono {payload['telefono']}")
+    if payload["correo"]:
+        details.append(f"correo {payload['correo']}")
+    if contacts:
+        details.append(f"{len(contacts)} contacto(s)")
+    if details:
+        summary += ". " + "; ".join(details)
+
+    action = _create_pending_action(
+        db,
+        conversation=conversation,
+        user=user,
+        message=message,
+        action_type="create_provider",
         summary=summary,
         payload=payload,
     )
@@ -748,6 +849,55 @@ def _execute_farm_activity(db: Session, action: AIPendingAction, user: Usuario) 
     }
 
 
+def _execute_provider(db: Session, action: AIPendingAction, user: Usuario) -> dict[str, Any]:
+    from core.routers.auth import require_roles
+    require_roles("administrativo", "admin")(user)
+    payload = dict(action.payload or {})
+    identification = str(payload.get("identificacion") or "").strip() or None
+    if identification:
+        existing = db.query(Proveedor).filter(Proveedor.identificacion == identification).first()
+        if existing:
+            raise ValueError(f"Ya existe un proveedor con la identificación {identification}")
+
+    row = Proveedor(
+        codigo=next_code(db, Proveedor, "codigo", "PROV-", 4),
+        nombre_legal=str(payload.get("nombre_legal") or "").strip(),
+        nombre_comercial=str(payload.get("nombre_comercial") or "").strip() or None,
+        identificacion=identification,
+        tipo_identificacion=str(payload.get("tipo_identificacion") or "").strip() or None,
+        correo=str(payload.get("correo") or "").strip() or None,
+        telefono=str(payload.get("telefono") or "").strip() or None,
+        sitio_web=str(payload.get("sitio_web") or "").strip() or None,
+        direccion=str(payload.get("direccion") or "").strip() or None,
+        provincia=str(payload.get("provincia") or "").strip() or None,
+        canton=str(payload.get("canton") or "").strip() or None,
+        distrito=str(payload.get("distrito") or "").strip() or None,
+        notas=str(payload.get("notas") or "").strip() or None,
+        activo=True,
+    )
+    if not row.nombre_legal:
+        raise ValueError("El proveedor no tiene nombre legal")
+    for item in payload.get("contactos") or []:
+        row.contactos.append(ProveedorContacto(
+            nombre=str(item.get("nombre") or "").strip()[:180],
+            puesto=str(item.get("puesto") or "").strip()[:140] or None,
+            correo=str(item.get("correo") or "").strip()[:180] or None,
+            telefono=str(item.get("telefono") or "").strip()[:80] or None,
+            principal=bool(item.get("principal")),
+            activo=True,
+            notas=str(item.get("notas") or "").strip()[:2000] or None,
+        ))
+    db.add(row)
+    db.flush()
+    return {
+        "entity": "provider",
+        "id": row.id,
+        "code": row.codigo,
+        "name": row.nombre_comercial or row.nombre_legal,
+        "path": "/proveedores",
+    }
+
+
 def _execute_lot_document(db: Session, action: AIPendingAction, user: Usuario) -> tuple[dict[str, Any], Path]:
     payload = dict(action.payload or {})
     lot = db.query(OrdenTrabajo).filter(OrdenTrabajo.id == int(payload["lot_id"])).first()
@@ -937,6 +1087,8 @@ def confirm_pending_action(
             result = _execute_receipt(db, action, user)
         elif action.action_type == "create_farm_activity":
             result = _execute_farm_activity(db, action, user)
+        elif action.action_type == "create_provider":
+            result = _execute_provider(db, action, user)
         elif action.action_type == "attach_lot_document":
             result, copied_path = _execute_lot_document(db, action, user)
             copied_paths.append(copied_path)

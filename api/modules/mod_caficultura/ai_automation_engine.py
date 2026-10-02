@@ -116,6 +116,8 @@ def _numeric_primary(result: dict[str, Any]) -> float | None:
 
 
 def condition_matches(row: AIAutomation, result: dict[str, Any]) -> bool:
+    if result.get("monitoring_data_available") is False:
+        return False
     operator = str(row.condition_operator or "always")
     current = _numeric_primary(result)
     previous = _numeric_primary(dict(row.last_value or {}))
@@ -328,12 +330,16 @@ def process_due_automations(
                 totals["failed"] += 1
             else:
                 run.status = "failed"
+                if persistent_threshold:
+                    row.last_value = {**result, "_condition_active": False}
                 row.last_error = "; ".join(str(item.get("error") or "Sin destinatarios válidos") for item in failures)[:2000]
                 run.error = row.last_error
                 totals["failed"] += 1
         except Exception as exc:
             logger.exception("Falló automatización IA %s", row.id)
             run.status = "failed"
+            # A failed attempt must not consume the threshold transition.
+            row.last_value = {**dict(row.last_value or {}), "_condition_active": False}
             run.error = str(exc)[:2000]
             run.finished_at = utcnow()
             row.last_error = run.error

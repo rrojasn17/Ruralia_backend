@@ -1,9 +1,9 @@
 {
   "key": "mod_caficultura",
   "name": "Caficultura",
-  "version": "1.6.3",
+  "version": "1.7.0",
   "module_type": "industry",
-  "description": "Gestión de fincas cafetaleras, insumos, recibos, lotes, trazabilidad y ventas.",
+  "description": "Gestión cafetalera con fincas, actividades, notas rápidas de campo, insumos, recibos, lotes, trazabilidad, ventas e IA.",
   "icon": "i-lucide-coffee",
   "entrypoint": "modules.mod_caficultura.router:router",
   "roles": [
@@ -44,6 +44,8 @@
     "gestionfincas:view",
     "gestionfincas:create",
     "gestionfincas:update",
+    "notas:manage",
+    "notas:view",
     "insumos:view",
     "ventas:view",
     "ventas:manage",
@@ -73,6 +75,8 @@
       "gestionfincas:view",
       "gestionfincas:create",
       "gestionfincas:update",
+      "notas:manage",
+      "notas:view",
       "insumos:view",
       "ventas:view",
       "ventas:manage",
@@ -94,7 +98,9 @@
       "ot:view",
       "ot:followup",
       "offline:sync",
-      "insumos:view"
+      "insumos:view",
+      "notas:view",
+      "notas:manage"
     ],
     "administrativo": [
       "dashboard:view",
@@ -107,6 +113,8 @@
       "gestionfincas:view",
       "gestionfincas:create",
       "gestionfincas:update",
+      "notas:manage",
+      "notas:view",
       "insumos:view",
       "ventas:view",
       "offline:sync",
@@ -122,6 +130,8 @@
       "gestionfincas:view",
       "gestionfincas:create",
       "gestionfincas:update",
+      "notas:manage",
+      "notas:view",
       "insumos:view",
       "offline:sync",
       "informes:view"
@@ -142,6 +152,8 @@
       "gestionfincas:view",
       "gestionfincas:create",
       "gestionfincas:update",
+      "notas:manage",
+      "notas:view",
       "insumos:view",
       "ventas:view",
       "ventas:manage",
@@ -171,6 +183,14 @@
       "icon": "i-lucide-tractor",
       "permission": "gestionfincas:view",
       "training_id": "nav-farm-management"
+    },
+    {
+      "group": "Finca",
+      "label": "Notas rápidas",
+      "to": "/notas",
+      "icon": "i-lucide-notebook-pen",
+      "permission": "notas:view",
+      "training_id": "nav-quick-notes"
     },
     {
       "group": "Beneficiado",
@@ -259,6 +279,7 @@
     "/clientes",
     "/fincas",
     "/gestionfincas",
+    "/notas",
     "/recibos",
     "/portal-recibos",
     "/ot",

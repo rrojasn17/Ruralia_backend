@@ -551,3 +551,72 @@ def test_environmental_query_finds_named_variables_and_sensors_without_recent_da
     no_recent = farm_sensor_analysis(db_session, {'farm_name': farm.nombre})
     assert no_recent['sensor_count'] == 2
     assert no_recent['variables'] == []
+
+
+def test_fertilization_returns_quantities_and_ignores_cancelled(db_session):
+    from modules.mod_caficultura.models import RegistroFincaInsumo
+    from modules.mod_caficultura.ai_metrics import farm_activity
+    _, _, farm, _ = _seed_operational_data(db_session, 'DOSE-DETAIL')
+    activity = ActividadFinca(nombre='Fertilización DOSE-DETAIL', tipo='fertilizacion', activa=True)
+    db_session.add(activity)
+    db_session.flush()
+    day = date.today() - timedelta(days=12)
+    row = RegistroFinca(finca_id=farm.id, actividad_id=activity.id, fecha=day,
+                        semana_inicio=day, semana_fin=day, observaciones='Lote norte')
+    cancelled = RegistroFinca(finca_id=farm.id, actividad_id=activity.id, fecha=date.today(),
+                        semana_inicio=day, semana_fin=day, estado='anulado')
+    db_session.add_all([row, cancelled])
+    db_session.flush()
+    db_session.add(RegistroFincaInsumo(registro_id=row.id, nombre_snapshot='Fórmula 18-5-15',
+                                      cantidad=125, unidad='kg', costo_total=19742.57))
+    db_session.commit()
+    result = days_since_fertilization(db_session, {'farm_name': farm.nombre})
+    assert result['last_fertilization_date'] == day.isoformat()
+    assert len(result['applications']) == 1
+    supply = result['applications'][0]['supplies'][0]
+    assert supply['quantity'] == 125 and supply['unit'] == 'kg'
+    assert supply['total_cost'] == 19742.57
+    result = farm_activity(db_session, {'farm_name': farm.nombre, 'start_date': day.isoformat(), 'end_date': day.isoformat()})
+    assert result['recent'][0]['supplies'][0] == supply
+
+
+def test_environmental_monitor_retries_failed_delivery(db_session, monkeypatch):
+    from modules.mod_caficultura import ai_automation_engine as engine
+    from modules.mod_caficultura.model_ai_consulting import AIAutomation
+    user, _, farm, _ = _seed_operational_data(db_session, 'ENV-RETRY')
+    node = IoTNode(finca_id=farm.id, nombre='Ambiente', did='ENV-RETRY', tipo='microcontrolador', activo=True)
+    db_session.add(node)
+    db_session.flush()
+    now = datetime.now(timezone.utc)
+    for index in range(4):
+        db_session.add(IoTReading(node_id=node.id, recorded_at=now - timedelta(hours=3-index),
+                                 source='manual', data={'humidity': 90}))
+    rule = AIAutomation(usuario_id=user.id, name='Humedad sostenida', metric_key='farm_sensor_analysis',
+        parameters={'farm_name': farm.nombre, 'humidity_threshold': 85}, condition_operator='gte', threshold=2,
+        recurrence='interval', interval_minutes=15, next_run_at=now, channels=['email'],
+        email_recipients=[user.correo], ai_enhance=False)
+    db_session.add(rule)
+    db_session.commit()
+    monkeypatch.setattr(engine, '_deliver', lambda *args: [{'status': 'failed', 'error': 'SMTP temporal'}])
+    first = engine.process_due_automations(db_session, now, automation_ids={rule.id})
+    assert first['failed'] == 1
+    assert rule.last_value['_condition_active'] is False
+    monkeypatch.setattr(engine, '_deliver', lambda *args: [{'status': 'sent', 'channel': 'email'}])
+    second = engine.process_due_automations(db_session, now + timedelta(minutes=15), automation_ids={rule.id})
+    assert second['sent'] == 1
+    third = engine.process_due_automations(db_session, now + timedelta(minutes=30), automation_ids={rule.id})
+    assert third['skipped'] == 1
+
+
+def test_environmental_stale_readings_do_not_trigger_high_humidity(db_session):
+    _, _, farm, _ = _seed_operational_data(db_session, 'ENV-STALE')
+    node = IoTNode(finca_id=farm.id, nombre='Ambiente', did='ENV-STALE', tipo='microcontrolador', activo=True)
+    db_session.add(node)
+    db_session.flush()
+    now = datetime.now(timezone.utc)
+    for hours in [8, 7, 6, 5]:
+        db_session.add(IoTReading(node_id=node.id, recorded_at=now-timedelta(hours=hours), source='manual', data={'humidity': 90}))
+    db_session.commit()
+    result = farm_sensor_analysis(db_session, {'farm_name': farm.nombre})
+    assert result['sample_count'] == 4
+    assert result['primary_value'] == 0

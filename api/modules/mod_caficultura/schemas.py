@@ -11,6 +11,11 @@ ESTADOS_OT = {"abierta", "en_proceso", "alerta", "pendiente_aprobacion", "finali
 TIPOS_PERSONA = {"personal", "juridica"}
 CATEGORIAS_CLIENTE = {"personal", "agro", "comercial", "industria"}
 
+NOTA_CATEGORIAS = {"general", "proveedor", "recibo", "actividad", "cliente", "insumo", "compra", "venta", "pendiente"}
+NOTA_ESTADOS = {"pendiente", "procesando", "procesada", "archivada"}
+NOTA_PRIORIDADES = {"baja", "normal", "alta", "urgente"}
+NOTA_VISIBILIDADES = {"personal", "equipo"}
+
 
 def normalize_role(value: str | None) -> str:
     raw = (value or "operario").strip().lower()
@@ -1027,6 +1032,7 @@ class SyncPush(BaseModel):
     recibos: List[ReciboCreate] = Field(default_factory=list)
     ots: List[OTCreate] = Field(default_factory=list)
     seguimientos: List[dict[str, Any]] = Field(default_factory=list)
+    notas: List[dict[str, Any]] = Field(default_factory=list)
 
 
 class SyncResultItem(BaseModel):
@@ -1040,6 +1046,7 @@ class SyncResult(BaseModel):
     recibos: List[SyncResultItem] = Field(default_factory=list)
     ots: List[SyncResultItem] = Field(default_factory=list)
     seguimientos: List[SyncResultItem] = Field(default_factory=list)
+    notas: List[SyncResultItem] = Field(default_factory=list)
 
 class PublicLoteReciboOut(BaseModel):
     numero_recibo: str
@@ -1268,6 +1275,150 @@ class ProveedorOut(ProveedorBase):
     id: int
     contactos: List[ProveedorContactoOut] = Field(default_factory=list)
     facturas_count: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class NotaRapidaCreate(BaseModel):
+    client_uuid: Optional[str] = Field(default=None, max_length=120)
+    finca_id: Optional[int] = None
+    titulo: Optional[str] = Field(default=None, max_length=180)
+    contenido: str = Field(min_length=1, max_length=20000)
+    categoria: str = Field(default="general", max_length=40)
+    prioridad: str = Field(default="normal", max_length=20)
+    visibilidad: str = Field(default="personal", max_length=20)
+    origen: str = Field(default="manual", max_length=30)
+    fijada: bool = False
+    etiquetas: List[str] = Field(default_factory=list, max_length=12)
+    contexto: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("categoria")
+    @classmethod
+    def categoria_ok(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in NOTA_CATEGORIAS:
+            raise ValueError("Categoría de nota inválida")
+        return value
+
+    @field_validator("prioridad")
+    @classmethod
+    def prioridad_ok(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in NOTA_PRIORIDADES:
+            raise ValueError("Prioridad de nota inválida")
+        return value
+
+    @field_validator("visibilidad")
+    @classmethod
+    def visibilidad_ok(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in NOTA_VISIBILIDADES:
+            raise ValueError("Visibilidad de nota inválida")
+        return value
+
+    @field_validator("etiquetas")
+    @classmethod
+    def etiquetas_ok(cls, values: List[str]) -> List[str]:
+        cleaned: list[str] = []
+        for raw in values:
+            tag = str(raw or "").strip().lower()[:40]
+            if tag and tag not in cleaned:
+                cleaned.append(tag)
+        return cleaned[:12]
+
+
+class NotaRapidaUpdate(BaseModel):
+    expected_version: Optional[int] = Field(default=None, ge=1)
+    finca_id: Optional[int] = None
+    titulo: Optional[str] = Field(default=None, max_length=180)
+    contenido: Optional[str] = Field(default=None, min_length=1, max_length=20000)
+    categoria: Optional[str] = Field(default=None, max_length=40)
+    estado: Optional[str] = Field(default=None, max_length=40)
+    prioridad: Optional[str] = Field(default=None, max_length=20)
+    visibilidad: Optional[str] = Field(default=None, max_length=20)
+    fijada: Optional[bool] = None
+    etiquetas: Optional[List[str]] = Field(default=None, max_length=12)
+    contexto: Optional[dict[str, Any]] = None
+    linked_entity_type: Optional[str] = Field(default=None, max_length=60)
+    linked_entity_id: Optional[int] = None
+
+    @field_validator("categoria")
+    @classmethod
+    def categoria_ok(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        value = value.strip().lower()
+        if value not in NOTA_CATEGORIAS:
+            raise ValueError("Categoría de nota inválida")
+        return value
+
+    @field_validator("estado")
+    @classmethod
+    def estado_ok(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        value = value.strip().lower()
+        if value not in NOTA_ESTADOS:
+            raise ValueError("Estado de nota inválido")
+        return value
+
+    @field_validator("prioridad")
+    @classmethod
+    def prioridad_ok(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        value = value.strip().lower()
+        if value not in NOTA_PRIORIDADES:
+            raise ValueError("Prioridad de nota inválida")
+        return value
+
+    @field_validator("visibilidad")
+    @classmethod
+    def visibilidad_ok(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        value = value.strip().lower()
+        if value not in NOTA_VISIBILIDADES:
+            raise ValueError("Visibilidad de nota inválida")
+        return value
+
+    @field_validator("etiquetas")
+    @classmethod
+    def etiquetas_ok(cls, values: Optional[List[str]]) -> Optional[List[str]]:
+        if values is None:
+            return values
+        cleaned: list[str] = []
+        for raw in values:
+            tag = str(raw or "").strip().lower()[:40]
+            if tag and tag not in cleaned:
+                cleaned.append(tag)
+        return cleaned[:12]
+
+
+class NotaRapidaOut(BaseModel):
+    id: int
+    public_id: str
+    client_uuid: Optional[str] = None
+    finca_id: Optional[int] = None
+    finca_nombre: Optional[str] = None
+    titulo: Optional[str] = None
+    contenido: str
+    categoria: str
+    estado: str
+    prioridad: str
+    visibilidad: str
+    origen: str
+    fijada: bool = False
+    etiquetas: List[str] = Field(default_factory=list)
+    contexto: dict[str, Any] = Field(default_factory=dict)
+    linked_entity_type: Optional[str] = None
+    linked_entity_id: Optional[int] = None
+    procesada_at: Optional[datetime] = None
+    procesada_por_id: Optional[int] = None
+    procesada_por_nombre: Optional[str] = None
+    created_by_id: Optional[int] = None
+    created_by_nombre: Optional[str] = None
+    version: int = 1
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

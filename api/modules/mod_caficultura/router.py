@@ -25,6 +25,7 @@ from modules.mod_caficultura.models import (
     Cliente,
     Finca,
     InsumoFinca,
+    NotaRapida,
     Proveedor,
     ProveedorContacto,
     CompraInsumoFactura,
@@ -76,6 +77,9 @@ from modules.mod_caficultura.schemas import (
     MapLocationResolveOut,
     InsumoFincaCreate,
     InsumoFincaOut,
+    NotaRapidaCreate,
+    NotaRapidaUpdate,
+    NotaRapidaOut,
     ProveedorCreate,
     ProveedorUpdate,
     ProveedorOut,
@@ -1885,6 +1889,67 @@ def _replace_provider_contacts(row: Proveedor, contactos) -> None:
         row.contactos.append(ProveedorContacto(**data))
 
 
+def serialize_nota_rapida(row: NotaRapida) -> NotaRapidaOut:
+    return NotaRapidaOut(
+        id=row.id,
+        public_id=row.public_id,
+        client_uuid=row.client_uuid,
+        finca_id=row.finca_id,
+        finca_nombre=row.finca.nombre if row.finca else None,
+        titulo=row.titulo,
+        contenido=row.contenido,
+        categoria=row.categoria,
+        estado=row.estado,
+        prioridad=row.prioridad,
+        visibilidad=row.visibilidad,
+        origen=row.origen,
+        fijada=bool(row.fijada),
+        etiquetas=list(row.etiquetas or []),
+        contexto=dict(row.contexto or {}),
+        linked_entity_type=row.linked_entity_type,
+        linked_entity_id=row.linked_entity_id,
+        procesada_at=row.procesada_at,
+        procesada_por_id=row.procesada_por_id,
+        procesada_por_nombre=row.procesada_por.nombre if row.procesada_por else None,
+        created_by_id=row.created_by_id,
+        created_by_nombre=row.created_by.nombre if row.created_by else None,
+        version=int(row.version or 1),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def nota_rapida_query(db: Session):
+    return db.query(NotaRapida).options(
+        selectinload(NotaRapida.finca),
+        selectinload(NotaRapida.created_by),
+        selectinload(NotaRapida.procesada_por),
+    )
+
+
+def can_manage_team_notes(current: Usuario) -> bool:
+    return bool(getattr(current, "is_superadmin", False)) or str(getattr(current, "rol", "")).strip().lower() in {"gerente", "administrativo", "admin"}
+
+
+def ensure_note_access(row: NotaRapida, current: Usuario, *, write: bool = False) -> None:
+    owner = int(row.created_by_id or 0) == int(current.id)
+    team_visible = str(row.visibilidad or "personal") == "equipo"
+    if write:
+        if owner or (team_visible and can_manage_team_notes(current)):
+            return
+        raise HTTPException(status_code=403, detail="No tiene permiso para modificar esta nota")
+    if owner or team_visible:
+        return
+    raise HTTPException(status_code=404, detail="Nota no encontrada")
+
+
+def normalize_note_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
 def serialize_compra_insumo_linea(row: CompraInsumoLinea) -> dict:
     return {
         "id": row.id,
@@ -2148,6 +2213,167 @@ def delete_trabajador_finca(trabajador_id: int, current: Usuario = Depends(get_c
     db.delete(row)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/notas-rapidas", response_model=list[NotaRapidaOut])
+def list_notas_rapidas(
+    estado: Optional[str] = None,
+    categoria: Optional[str] = None,
+    finca_id: Optional[int] = None,
+    q: Optional[str] = None,
+    incluir_archivadas: bool = False,
+    limit: int = 100,
+    offset: int = 0,
+    current: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    query = nota_rapida_query(db).filter(
+        or_(
+            NotaRapida.created_by_id == current.id,
+            NotaRapida.visibilidad == "equipo",
+        )
+    )
+    if estado:
+        query = query.filter(NotaRapida.estado == estado.strip().lower())
+    elif not incluir_archivadas:
+        query = query.filter(NotaRapida.estado != "archivada")
+    if categoria:
+        query = query.filter(NotaRapida.categoria == categoria.strip().lower())
+    if finca_id is not None:
+        query = query.filter(NotaRapida.finca_id == finca_id)
+    if q and q.strip():
+        needle = f"%{q.strip()}%"
+        query = query.filter(or_(NotaRapida.titulo.ilike(needle), NotaRapida.contenido.ilike(needle)))
+    safe_limit = max(1, min(int(limit or 100), 200))
+    safe_offset = max(0, int(offset or 0))
+    rows = (
+        query
+        .order_by(NotaRapida.fijada.desc(), NotaRapida.updated_at.desc(), NotaRapida.id.desc())
+        .offset(safe_offset)
+        .limit(safe_limit)
+        .all()
+    )
+    return [serialize_nota_rapida(row) for row in rows]
+
+
+@router.post("/notas-rapidas", response_model=NotaRapidaOut, status_code=201)
+def create_nota_rapida(
+    payload: NotaRapidaCreate,
+    current: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    data = payload.model_dump()
+    client_uuid = normalize_note_text(data.get("client_uuid"))
+    if client_uuid:
+        existing = nota_rapida_query(db).filter(NotaRapida.client_uuid == client_uuid).first()
+        if existing:
+            if existing.created_by_id != current.id:
+                raise HTTPException(status_code=409, detail="El identificador de sincronización ya está en uso")
+            return serialize_nota_rapida(existing)
+
+    finca_id = data.get("finca_id")
+    if finca_id is not None and not db.query(Finca.id).filter(Finca.id == finca_id).first():
+        raise HTTPException(status_code=404, detail="Finca no encontrada")
+
+    contenido = normalize_note_text(data.get("contenido"))
+    if not contenido:
+        raise HTTPException(status_code=422, detail="La nota no puede estar vacía")
+    titulo = normalize_note_text(data.get("titulo"))
+    if not titulo:
+        first_line = contenido.splitlines()[0].strip()
+        titulo = first_line[:80] if first_line else None
+
+    row = NotaRapida(
+        client_uuid=client_uuid,
+        created_by_id=current.id,
+        finca_id=finca_id,
+        titulo=titulo,
+        contenido=contenido,
+        categoria=data.get("categoria") or "general",
+        estado="pendiente",
+        prioridad=data.get("prioridad") or "normal",
+        visibilidad=data.get("visibilidad") or "personal",
+        origen=normalize_note_text(data.get("origen")) or "manual",
+        fijada=bool(data.get("fijada")),
+        etiquetas=list(data.get("etiquetas") or []),
+        contexto=dict(data.get("contexto") or {}),
+        version=1,
+    )
+    db.add(row)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if client_uuid:
+            existing = nota_rapida_query(db).filter(NotaRapida.client_uuid == client_uuid, NotaRapida.created_by_id == current.id).first()
+            if existing:
+                return serialize_nota_rapida(existing)
+        raise HTTPException(status_code=409, detail="No se pudo guardar la nota por un conflicto de sincronización")
+    row = nota_rapida_query(db).filter(NotaRapida.id == row.id).first()
+    return serialize_nota_rapida(row)
+
+
+@router.get("/notas-rapidas/{nota_id}", response_model=NotaRapidaOut)
+def get_nota_rapida(
+    nota_id: int,
+    current: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = nota_rapida_query(db).filter(NotaRapida.id == nota_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Nota no encontrada")
+    ensure_note_access(row, current)
+    return serialize_nota_rapida(row)
+
+
+@router.patch("/notas-rapidas/{nota_id}", response_model=NotaRapidaOut)
+def update_nota_rapida(
+    nota_id: int,
+    payload: NotaRapidaUpdate,
+    current: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    query = nota_rapida_query(db).filter(NotaRapida.id == nota_id)
+    if db.get_bind().dialect.name == "postgresql":
+        query = query.with_for_update()
+    row = query.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Nota no encontrada")
+    ensure_note_access(row, current, write=True)
+
+    data = payload.model_dump(exclude_unset=True)
+    expected_version = data.pop("expected_version", None)
+    if expected_version is not None and int(row.version or 1) != int(expected_version):
+        raise HTTPException(status_code=409, detail="La nota cambió en otro dispositivo. Recárguela antes de guardar.")
+
+    if "finca_id" in data and data["finca_id"] is not None:
+        if not db.query(Finca.id).filter(Finca.id == data["finca_id"]).first():
+            raise HTTPException(status_code=404, detail="Finca no encontrada")
+
+    previous_status = str(row.estado or "pendiente")
+    for key, value in data.items():
+        if key in {"titulo", "contenido", "linked_entity_type"} and isinstance(value, str):
+            value = normalize_note_text(value)
+        setattr(row, key, value)
+
+    if not normalize_note_text(row.contenido):
+        raise HTTPException(status_code=422, detail="La nota no puede quedar vacía")
+
+    if row.estado == "procesada" and previous_status != "procesada":
+        row.procesada_at = utcnow()
+        row.procesada_por_id = current.id
+    elif row.estado in {"pendiente", "procesando"}:
+        row.procesada_at = None
+        row.procesada_por_id = None
+
+    row.version = int(row.version or 1) + 1
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="No se pudo actualizar la nota")
+    row = nota_rapida_query(db).filter(NotaRapida.id == nota_id).first()
+    return serialize_nota_rapida(row)
 
 
 @router.get("/proveedores", response_model=list[ProveedorOut])
@@ -2638,6 +2864,7 @@ BACKUP_MODELS = [
     ActividadFinca,
     TrabajadorFinca,
     InsumoFinca,
+    NotaRapida,
     Proveedor,
     ProveedorContacto,
     CompraInsumoFactura,
@@ -4045,10 +4272,19 @@ def upload_solicitud_documento(
 
 
 @router.post("/sync/push", response_model=SyncResult)
-def sync_push(payload: SyncPush, current: Usuario = Depends(require_roles("gerente", "operario", "administrativo")), db: Session = Depends(get_db)):
+def sync_push(payload: SyncPush, current: Usuario = Depends(get_current_user), db: Session = Depends(get_db)):
     result = SyncResult()
+    # La cola es extensible por tipo. Mantener la autorización por elemento evita que
+    # añadir un tipo de captura ligera (como notas) amplíe permisos de recibos/OT.
+    try:
+        require_roles("gerente", "operario", "administrativo")(current)
+        operational_sync_allowed = True
+    except HTTPException:
+        operational_sync_allowed = False
     for item in payload.recibos:
         try:
+            if not operational_sync_allowed:
+                raise PermissionError("No autorizado para sincronizar recibos")
             row = create_recibo_from_payload(db, item, current)
             db.commit()
             result.recibos.append(SyncResultItem(client_uuid=item.client_uuid, id=row.id, status="ok"))
@@ -4057,6 +4293,8 @@ def sync_push(payload: SyncPush, current: Usuario = Depends(require_roles("geren
             result.recibos.append(SyncResultItem(client_uuid=item.client_uuid, status="error", detail=str(exc)))
     for item in payload.ots:
         try:
+            if not operational_sync_allowed:
+                raise PermissionError("No autorizado para sincronizar lotes")
             row = create_ot_from_payload(db, item, current)
             db.commit()
             result.ots.append(SyncResultItem(client_uuid=item.client_uuid, id=row.id, status="ok"))
@@ -4065,6 +4303,8 @@ def sync_push(payload: SyncPush, current: Usuario = Depends(require_roles("geren
             result.ots.append(SyncResultItem(client_uuid=item.client_uuid, status="error", detail=str(exc)))
     for raw in payload.seguimientos:
         try:
+            if not operational_sync_allowed:
+                raise PermissionError("No autorizado para sincronizar seguimientos")
             ot_id = int(raw.get("ot_id") or raw.get("orden_trabajo_id") or 0)
             if not ot_id:
                 raise ValueError("Falta ot_id")
@@ -4091,6 +4331,14 @@ def sync_push(payload: SyncPush, current: Usuario = Depends(require_roles("geren
         except Exception as exc:
             db.rollback()
             result.seguimientos.append(SyncResultItem(client_uuid=raw.get("client_uuid"), status="error", detail=str(exc)))
+    for raw in payload.notas:
+        try:
+            body = NotaRapidaCreate(**raw)
+            note = create_nota_rapida(body, current=current, db=db)
+            result.notas.append(SyncResultItem(client_uuid=body.client_uuid, id=note.id, status="ok"))
+        except Exception as exc:
+            db.rollback()
+            result.notas.append(SyncResultItem(client_uuid=raw.get("client_uuid"), status="error", detail=str(exc)))
     return result
 
 @router.get("/public/lotes/{qr_token}", response_model=PublicLoteOut)

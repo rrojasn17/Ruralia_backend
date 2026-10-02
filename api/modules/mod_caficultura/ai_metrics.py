@@ -142,6 +142,19 @@ def resolve_farm(db: Session, query: str) -> dict[str, Any]:
     return _resolve_named(rows, query, ("nombre", "codigo", "propietario"), "la finca")
 
 
+def _activity_detail(row: RegistroFinca) -> dict[str, Any]:
+    return {
+        "id": row.id, "date": _json_value(row.fecha),
+        "farm": row.finca.nombre if row.finca else None,
+        "activity": row.actividad.nombre if row.actividad else row.descripcion,
+        "status": row.estado, "description": row.descripcion, "observations": row.observaciones,
+        "supplies": [{"name": item.nombre_snapshot, "quantity": item.cantidad,
+                      "unit": item.unidad, "total_cost": item.costo_total,
+                      "notes": item.comentario} for item in row.insumos],
+        "quantity_basis": "Total registrado por insumo en esta actividad; no implica dosis por planta o hectárea.",
+    }
+
+
 def days_since_fertilization(db: Session, parameters: dict[str, Any]) -> dict[str, Any]:
     farm_name = str(parameters.get("farm_name") or parameters.get("finca") or "").strip()
     resolved = resolve_farm(db, farm_name)
@@ -157,9 +170,16 @@ def days_since_fertilization(db: Session, parameters: dict[str, Any]) -> dict[st
     last_date = (
         db.query(func.max(RegistroFinca.fecha))
         .join(ActividadFinca, ActividadFinca.id == RegistroFinca.actividad_id)
-        .filter(RegistroFinca.finca_id == farm.id, fertilization_activity)
+        .filter(RegistroFinca.finca_id == farm.id, fertilization_activity,
+                ~func.lower(RegistroFinca.estado).in_(["anulado", "anulada", "cancelado", "cancelada"]))
         .scalar()
     )
+    latest_records = (db.query(RegistroFinca)
+        .join(ActividadFinca, ActividadFinca.id == RegistroFinca.actividad_id)
+        .filter(RegistroFinca.finca_id == farm.id, fertilization_activity,
+                RegistroFinca.fecha == last_date,
+                ~func.lower(RegistroFinca.estado).in_(["anulado", "anulada", "cancelado", "cancelada"]))
+        .order_by(RegistroFinca.id.desc()).all()) if last_date else []
     baseline = last_date or (farm.created_at.date() if farm.created_at else date.today())
     days = max((date.today() - baseline).days, 0)
     return {
@@ -167,6 +187,7 @@ def days_since_fertilization(db: Session, parameters: dict[str, Any]) -> dict[st
         "metric": "days_since_fertilization",
         "farm": {"id": farm.id, "name": farm.nombre},
         "last_fertilization_date": last_date.isoformat() if last_date else None,
+        "applications": [_activity_detail(row) for row in latest_records],
         "baseline": "last_fertilization" if last_date else "farm_created_at",
         "days_without_fertilization": days,
         "primary_value": days,
@@ -192,7 +213,7 @@ def farm_sensor_analysis(db: Session, parameters: dict[str, Any]) -> dict[str, A
     hours = min(max(int(parameters.get("hours") or 24), 1), 168)
     telemetry = jsonable_encoder(analyze_farm_telemetry(db, farm.id, {"hours": hours}))
     node_metadata = {node["id"]: node["variables"] for node in inventory["nodes"]}
-    humidity_threshold = min(max(float(parameters.get("humidity_threshold") or 85), 0), 100)
+    humidity_threshold = min(max(float(parameters["humidity_threshold"] if parameters.get("humidity_threshold") is not None else 85), 0), 100)
     max_gap_hours = min(max(float(parameters.get("max_gap_hours") or 2), 0.25), 6)
     now = datetime.now(timezone.utc)
     start = now - timedelta(hours=hours)
@@ -205,13 +226,13 @@ def farm_sensor_analysis(db: Session, parameters: dict[str, Any]) -> dict[str, A
             IoTReading.recorded_at >= start,
             IoTReading.recorded_at <= now,
         )
-        .order_by(IoTReading.recorded_at.asc(), IoTReading.id.asc())
+        .order_by(IoTReading.recorded_at.desc(), IoTReading.id.desc())
         .limit(5000)
         .all()
     )
 
     node_samples: dict[int, list[dict[str, Any]]] = {}
-    for node_id, node_name, recorded_at, raw_values in rows:
+    for node_id, node_name, recorded_at, raw_values in reversed(rows):
         values = raw_values if isinstance(raw_values, dict) else {}
         humidity_values = []
         for key, value in values.items():
@@ -293,6 +314,7 @@ def farm_sensor_analysis(db: Session, parameters: dict[str, Any]) -> dict[str, A
         "latest_reading_at": latest_reading_at.isoformat() if latest_reading_at else None,
         "latest_relative_humidity": round(latest_humidity, 2) if latest_humidity is not None else None,
         "sample_count": len(samples),
+        "monitoring_data_available": latest_reading_at is not None and now - latest_reading_at <= max_gap,
         "samples": samples[:30],
         "primary_value": round(current_streak_hours, 2),
         "unit": "hours",
@@ -760,16 +782,8 @@ def farm_activity(db: Session, parameters: dict[str, Any]) -> dict[str, Any]:
         "supplies_cost": round(float(supply_cost or 0), 2),
         "total_cost": total_cost,
         "currency": "CRC",
-        "recent": [
-            {
-                "id": row.id,
-                "date": _json_value(row.fecha),
-                "farm": row.finca.nombre if row.finca else None,
-                "activity": row.actividad.nombre if row.actividad else row.descripcion,
-                "status": row.estado,
-            }
-            for row in recent
-        ],
+        "recent": [_activity_detail(row) for row in recent],
+        "details_truncated": record_count > len(recent),
         "primary_value": total_cost,
         "summary": f"{scope.capitalize()} registran {record_count} actividades y ₡{total_cost:,.2f} en costos durante el período.",
     }

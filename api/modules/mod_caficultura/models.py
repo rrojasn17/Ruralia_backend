@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import uuid
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -118,6 +119,45 @@ class Finca(Base):
     cliente = relationship("Cliente", back_populates="fincas")
     recibos = relationship("ReciboCafe", back_populates="finca")
     ots = relationship("OrdenTrabajo", back_populates="finca")
+
+
+class NotaRapida(Base):
+    __tablename__ = "navia_notas_rapidas"
+    __table_args__ = (
+        UniqueConstraint("public_id", name="uq_nota_rapida_public_id"),
+        UniqueConstraint("client_uuid", name="uq_nota_rapida_client_uuid"),
+        CheckConstraint("version > 0", name="ck_nota_rapida_version_positiva"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    public_id = Column(String(40), nullable=False, default=lambda: uuid.uuid4().hex, index=True)
+    client_uuid = Column(String(120), nullable=True, index=True)
+    created_by_id = Column(Integer, ForeignKey("navia_usuarios.id", ondelete="SET NULL"), nullable=True, index=True)
+    finca_id = Column(Integer, ForeignKey("navia_fincas.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    titulo = Column(String(180), nullable=True)
+    contenido = Column(Text, nullable=False)
+    categoria = Column(String(40), nullable=False, default="general", server_default="general", index=True)
+    estado = Column(String(40), nullable=False, default="pendiente", server_default="pendiente", index=True)
+    prioridad = Column(String(20), nullable=False, default="normal", server_default="normal", index=True)
+    visibilidad = Column(String(20), nullable=False, default="personal", server_default="personal", index=True)
+    origen = Column(String(30), nullable=False, default="manual", server_default="manual", index=True)
+    fijada = Column(Boolean, nullable=False, default=False, server_default="false", index=True)
+    etiquetas = Column(JSON, nullable=False, default=list)
+    contexto = Column(JSON, nullable=False, default=dict)
+
+    linked_entity_type = Column(String(60), nullable=True, index=True)
+    linked_entity_id = Column(Integer, nullable=True, index=True)
+    procesada_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    procesada_por_id = Column(Integer, ForeignKey("navia_usuarios.id", ondelete="SET NULL"), nullable=True)
+    version = Column(Integer, nullable=False, default=1, server_default="1")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    finca = relationship("Finca")
+    created_by = relationship("Usuario", foreign_keys=[created_by_id])
+    procesada_por = relationship("Usuario", foreign_keys=[procesada_por_id])
 
 
 class ReciboCafe(Base):
