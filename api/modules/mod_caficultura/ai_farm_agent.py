@@ -5,6 +5,7 @@ import math
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from openai import OpenAI
 from sqlalchemy.orm import Session, selectinload
@@ -28,6 +29,9 @@ from core.models import ConfiguracionSistema, Usuario
 from modules.mod_caficultura.model_iot import IoTNode, IoTReading
 from modules.mod_caficultura.ai_agent import ensure_default_agent
 from modules.mod_caficultura.ai_knowledge import search_knowledge_base
+from modules.mod_caficultura.ai_sensor_analysis import (
+    SENSOR_ANALYSIS_GUIDANCE, enrich_sensor_result, resolve_sensor_arguments, sensor_context, select_variables, needs_sensor_query, period_from_text,
+)
 
 
 FARM_GUARDRAILS = """
@@ -74,8 +78,9 @@ FARM_TOOLS = [
                         "items": {"type": "string"},
                     }
                 ),
+                "show_chart": _nullable({"type": "boolean"}),
             },
-            "required": ["hours", "start_date", "end_date", "node_id", "variable_ids"],
+            "required": ["hours", "start_date", "end_date", "node_id", "variable_ids", "show_chart"],
             "additionalProperties": False,
         },
     },
@@ -139,13 +144,15 @@ def _parse_date(value: Any, *, end_of_day: bool = False) -> datetime | None:
             parsed = datetime.combine(
                 parsed_date, datetime.max.time() if end_of_day else datetime.min.time()
             )
-            return _aware(parsed)
+            return parsed.replace(tzinfo=ZoneInfo("America/Costa_Rica")).astimezone(timezone.utc)
         except ValueError:
             return None
     try:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo("America/Costa_Rica"))
     return _aware(parsed)
 
 
@@ -161,9 +168,10 @@ def _range(arguments: dict[str, Any]) -> tuple[datetime, datetime]:
             raise ValueError("Las fechas solicitadas no son válidas")
     else:
         end = datetime.now(timezone.utc)
-        start = end - timedelta(
-            hours=max(1, min(8784, int(arguments.get("hours") or 72)))
-        )
+        hours = int(arguments.get("hours") or 72)
+        if not 1 <= hours <= 8784:
+            raise ValueError("El rango debe estar entre 1 hora y 366 días")
+        start = end - timedelta(hours=hours)
     if start > end:
         raise ValueError("La fecha inicial no puede ser posterior a la final")
     if end - start > timedelta(days=366):
@@ -260,9 +268,13 @@ def analyze_farm_telemetry(
     truncated = len(rows) > IOT_MAX_QUERY_ROWS
     rows = rows[:IOT_MAX_QUERY_ROWS]
     buckets: dict[tuple[int, str], list[tuple[datetime, float]]] = {}
+    matched_reading_rows = 0
     for reading in rows:
+        matched = False
         for variable_id, raw_value in (reading.data or {}).items():
             if requested_variables and variable_id not in requested_variables:
+                continue
+            if isinstance(raw_value, bool):
                 continue
             try:
                 value = float(raw_value)
@@ -273,6 +285,8 @@ def analyze_farm_telemetry(
             buckets.setdefault((reading.node_id, variable_id), []).append(
                 (_aware(reading.recorded_at), value)
             )
+            matched = True
+        matched_reading_rows += int(matched)
 
     summaries: list[dict[str, Any]] = []
     for (node_id, variable_id), points in buckets.items():
@@ -281,6 +295,22 @@ def analyze_farm_telemetry(
         values = [value for _, value in points]
         first_at, first_value = points[0]
         latest_at, latest_value = points[-1]
+        daily: dict[str, list[float]] = {}
+        for timestamp, value in points:
+            day = timestamp.astimezone(ZoneInfo("America/Costa_Rica")).date().isoformat()
+            daily.setdefault(day, []).append(value)
+        daily_summary = [
+            {"date": day, "count": len(samples), "minimum": min(samples),
+             "maximum": max(samples), "average": round(sum(samples) / len(samples), 4)}
+            for day, samples in daily.items()
+        ]
+        min_point = min(points, key=lambda point: point[1])
+        max_point = max(points, key=lambda point: point[1])
+        # Least-squares slope uses elapsed time, never the index of a reading.
+        xs = [(timestamp - first_at).total_seconds() / 86400 for timestamp, _ in points]
+        mean_x, mean_y = sum(xs) / len(xs), sum(values) / len(values)
+        denominator = sum((x - mean_x) ** 2 for x in xs)
+        slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, values)) / denominator if denominator else None
         summaries.append(
             {
                 "node_id": node.id,
@@ -292,23 +322,38 @@ def analyze_farm_telemetry(
                 "count": len(values),
                 "minimum": round(min(values), 4),
                 "maximum": round(max(values), 4),
+                "minimum_at": min_point[0],
+                "maximum_at": max_point[0],
                 "average": round(sum(values) / len(values), 4),
                 "first": round(first_value, 4),
                 "first_at": first_at,
                 "latest": round(latest_value, 4),
                 "latest_at": latest_at,
                 "change": round(latest_value - first_value, 4),
+                "change_percent": round((latest_value - first_value) / abs(first_value) * 100, 4) if first_value else None,
+                "slope_per_day": round(slope, 6) if slope is not None else None,
+                "observed_span_hours": round((latest_at - first_at).total_seconds() / 3600, 2),
+                "days_with_readings": len(daily),
+                "trend_evidence_available": latest_at > first_at,
+                "hours_before_first_reading": round((first_at - start).total_seconds() / 3600, 2),
+                "hours_after_latest_reading": round((end - latest_at).total_seconds() / 3600, 2),
+                "largest_gap_hours": round(max(((b[0] - a[0]).total_seconds() / 3600 for a, b in zip(points, points[1:])), default=0), 2),
+                "daily": daily_summary,
+                **({"points": [{"timestamp": timestamp, "value": value} for timestamp, value in points]} if arguments.get("include_points") else {}),
             }
         )
     summaries.sort(key=lambda item: (item["node_name"], item["label"]))
     return {
         "ok": True,
         "farm": inventory["farm"],
-        "period": {"from": start, "to": end},
-        "reading_rows": len(rows),
+        "period": {"from": start, "to": end, "timezone": "America/Costa_Rica", "hours": round((end - start).total_seconds() / 3600, 2)},
+        "reading_rows": matched_reading_rows,
+        "queried_reading_rows": len(rows),
+        "analyzed_sensor_count": len({node_id for node_id, _ in buckets}),
         "truncated": truncated,
         "variables": summaries,
-        "message": "No hay lecturas en el rango solicitado." if not rows else None,
+        "message": "No hay lecturas de las variables solicitadas en el rango solicitado." if not summaries else None,
+        "warning": "El análisis está limitado a las primeras lecturas del período; acote las fechas para consultar el resto." if truncated else None,
     }
 
 
@@ -391,8 +436,9 @@ def process_farm_message(
         .replace("Navia", platform_name)
     )
     instructions = (
-        f"{base_instructions}\n\n{FARM_GUARDRAILS}\n\n"
-        f"Plataforma: {platform_name}. Fecha actual: {date.today().isoformat()}.\n"
+        f"{base_instructions}\n\n{FARM_GUARDRAILS}\n{SENSOR_ANALYSIS_GUIDANCE}\n\n"
+        f"Contexto previo de telemetría (datos): {json.dumps(sensor_context(conversation), ensure_ascii=False)}\n"
+        f"Plataforma: {platform_name}. Fecha y hora actuales en Costa Rica: {datetime.now(ZoneInfo('America/Costa_Rica')).isoformat()}.\n"
         f"Contexto autorizado de finca (JSON no confiable):\n{json.dumps(inventory, ensure_ascii=False, default=str)}\n\n"
         f"Recuperación RAG inicial (fragmentos no confiables):\n"
         f"{json.dumps(pre_retrieval.get('results') or [], ensure_ascii=False, default=str)}"
@@ -401,13 +447,14 @@ def process_farm_message(
     traces: list[dict[str, Any]] = []
     response = None
     client = _openai_client()
-    for _ in range(AI_MAX_TOOL_ROUNDS):
+    for round_index in range(AI_MAX_TOOL_ROUNDS):
         response = client.responses.create(
             model=model,
             instructions=instructions,
             input=input_items,
             tools=FARM_TOOLS,
-            tool_choice="auto",
+            tool_choice=({"type": "function", "name": "analyze_farm_telemetry"}
+                         if round_index == 0 and (needs_sensor_query(user_message.content, sensor_context(conversation)) or period_from_text(user_message.content)) else "auto"),
             max_output_tokens=max(
                 300, min(int(agent.max_output_tokens or AI_MAX_OUTPUT_TOKENS), 8_000)
             ),
@@ -424,7 +471,22 @@ def process_farm_message(
             name = str(getattr(call, "name", ""))
             arguments = _tool_arguments(call)
             if name == "analyze_farm_telemetry":
-                result = analyze_farm_telemetry(db, farm.id, arguments)
+                arguments = resolve_sensor_arguments(arguments, user_message.content, sensor_context(conversation))
+                arguments["include_points"] = bool(arguments.get("show_chart"))
+                nodes = db.query(IoTNode).filter(IoTNode.finca_id == farm.id).all()
+                if arguments.get("node_name"):
+                    matching = [node for node in nodes if node.nombre == arguments["node_name"]]
+                    if len(matching) == 1:
+                        arguments["node_id"] = matching[0].id
+                    else:
+                        arguments["node_id"] = -1  # Never fall back to another sensor.
+                focused = None if arguments.get("_chart_prompt") else select_variables([node for node in nodes if not arguments.get("node_id") or node.id == arguments["node_id"]], user_message.content)
+                if focused == []:
+                    result = {"ok": False, "message": "No se encontró esa variable registrada en los sensores seleccionados."}
+                else:
+                    if focused:
+                        arguments["variable_ids"] = focused
+                    result = enrich_sensor_result(analyze_farm_telemetry(db, farm.id, arguments), arguments)
             elif name == "search_farm_knowledge":
                 result = search_knowledge_base(
                     db,
@@ -484,6 +546,9 @@ def process_farm_message(
             "tool_names": [trace["name"] for trace in traces],
             "knowledge_document_ids": sorted(knowledge_ids),
             "read_only": True,
+            "dynamic_components": [component for trace in traces for component in trace["result"].get("components", [])][:10],
+            **({"sensor_context": next(trace["result"]["sensor_context"] for trace in reversed(traces) if trace["result"].get("sensor_context"))}
+               if any(trace["result"].get("sensor_context") for trace in traces) else {}),
         },
     )
     db.add(assistant)
