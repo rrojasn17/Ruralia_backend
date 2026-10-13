@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import io
 import json
+import logging
 import math
 import re
 import unicodedata
@@ -68,6 +69,7 @@ from modules.mod_caficultura.iot_formulas import calculated_series
 
 router = APIRouter(prefix="/iot", tags=["iot"])
 manager_dependency = require_roles("admin")
+logger = logging.getLogger(__name__)
 
 SAFE_COLOR = re.compile(r"^(#[0-9A-Fa-f]{3,8}|[a-zA-Z]{3,20})$")
 SAFE_VARIABLE_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,79}$")
@@ -1106,6 +1108,19 @@ def _validate_ttn_secret(candidate: str | None, expected_hash: str) -> bool:
     return hmac.compare_digest(hash_token(candidate), expected_hash)
 
 
+def _ignored_ttn_uplink(reason: str, did: str, application_id: str, integration_id: int | None = None) -> dict[str, Any]:
+    # A 2xx acknowledgement does not mean that a reading was stored. Keep
+    # rejection reasons visible in production logs without logging payloads or secrets.
+    logger.warning(
+        "TTN uplink ignored: reason=%s dev_eui=%r application_id=%r integration_id=%r",
+        reason, did, application_id, integration_id,
+    )
+    result = {"status": "ignored", "reason": reason, "did": did}
+    if integration_id is not None:
+        result["integration_id"] = integration_id
+    return result
+
+
 def _ingest_ttn_for_node(
     db: Session,
     node: IoTNode,
@@ -1115,7 +1130,7 @@ def _ingest_ttn_for_node(
     integration: IoTIntegration | None = None,
 ) -> dict[str, Any]:
     if not node.activo:
-        return {"status": "ignored", "reason": "sensor_inactive", "did": did}
+        return _ignored_ttn_uplink("sensor_inactive", did, application_id, integration.id if integration else None)
 
     raw_data = (payload.get("uplink_message") or {}).get("decoded_payload") or {}
     if not isinstance(raw_data, dict):
@@ -1123,7 +1138,7 @@ def _ingest_ttn_for_node(
             status_code=422, detail="uplink_message.decoded_payload debe ser un objeto JSON"
         )
     if not _flatten_numeric(raw_data):
-        return {"status": "ignored", "reason": "no_numeric_decoded_payload", "did": did}
+        return _ignored_ttn_uplink("no_numeric_decoded_payload", did, application_id, integration.id if integration else None)
 
     row, mapped, duplicate = _record_reading(
         db,
@@ -1200,12 +1215,7 @@ async def ingest_ttn_integration(
     if not node:
         # 2xx evita reintentos innecesarios de TTN por dispositivos que todavía
         # no han sido registrados o fueron asociados a otra integración.
-        return {
-            "status": "ignored",
-            "reason": "sensor_not_registered_for_integration",
-            "did": did,
-            "integration_id": integration.id,
-        }
+        return _ignored_ttn_uplink("sensor_not_registered_for_integration", did, application_id, integration.id)
     return _ingest_ttn_for_node(db, node, payload, did, application_id, integration)
 
 
@@ -1252,7 +1262,7 @@ async def ingest_ttn_legacy(
         .first()
     )
     if not node:
-        return {"status": "ignored", "reason": "legacy_sensor_not_registered", "did": did}
+        return _ignored_ttn_uplink("legacy_sensor_not_registered", did, _ttn_application_id(payload))
     return _ingest_ttn_for_node(
         db, node, payload, did, _ttn_application_id(payload), None
     )

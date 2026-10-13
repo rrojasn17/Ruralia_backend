@@ -1342,7 +1342,11 @@ def bootstrap(
             PasswordResetToken.created_at < utcnow() - timedelta(days=7)
         ).delete(synchronize_session=False)
 
-    if seed_demo_data:
+    catalogs_cleared = db.query(ConfiguracionSistema).filter(
+        ConfiguracionSistema.clave == "caficultura_catalogs_cleared",
+        ConfiguracionSistema.valor == "true",
+    ).first() is not None
+    if seed_demo_data and not catalogs_cleared:
         cliente_demo = db.query(Cliente).filter(Cliente.codigo == "CL-00001").first()
 
         if not cliente_demo:
@@ -1400,6 +1404,8 @@ def bootstrap(
     existing_activity_names = {
         row[0] for row in db.query(ActividadFinca.nombre).all()
     }
+    if catalogs_cleared:
+        activity_definitions = []
     for nombre, tipo, ambito, descripcion, requiere_insumo, unidad in activity_definitions:
         if nombre in existing_activity_names:
             continue
@@ -1414,14 +1420,14 @@ def bootstrap(
         ))
         existing_activity_names.add(nombre)
 
-    if seed_demo_data and not db.query(InsumoFinca).first():
+    if seed_demo_data and not catalogs_cleared and not db.query(InsumoFinca).first():
         db.add_all([
             InsumoFinca(codigo="INS-001", nombre="Fertilizante 10-30-10", tipo="fertilizante", unidad="saco", costo_unitario=25000, activo=True),
             InsumoFinca(codigo="INS-002", nombre="Cal dolomita", tipo="enmienda", unidad="saco", costo_unitario=4500, activo=True),
             InsumoFinca(codigo="INS-003", nombre="Producto foliar", tipo="foliar", unidad="litro", costo_unitario=8500, activo=True),
         ])
 
-    if seed_demo_data and not db.query(TrabajadorFinca).first():
+    if seed_demo_data and not catalogs_cleared and not db.query(TrabajadorFinca).first():
         db.add(TrabajadorFinca(
             codigo="TR-001",
             nombre="Trabajador demostrativo",
