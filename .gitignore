@@ -90,3 +90,5 @@ secrets/
 
 # Private local database snapshots
 /.local-backups/
+# Backups created by the production menu repair command.
+caficultura-menu-before.*.json
