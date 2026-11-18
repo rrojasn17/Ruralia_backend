@@ -34,6 +34,7 @@ from config import (
 )
 from core.module_manager import get_active_industry_module, require_active_module, sync_builtin_modules
 from core.routers.admin import router as core_admin_router
+from core.routers.backups import router as module_backups_router
 from core.routers.auth import router as auth_router
 from core.services import bootstrap_core
 from database import Base, SessionLocal, engine
@@ -42,7 +43,7 @@ logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
-logger = logging.getLogger("navia-api")
+logger = logging.getLogger("ruralia-api")
 
 validate_runtime_config()
 
@@ -140,7 +141,7 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Accept", "Authorization", "Cache-Control", "Content-Type", "X-API-Token", "X-IoT-Token", "X-Portal-Token", "X-Request-ID", "X-TTN-Webhook-Secret"],
+    allow_headers=["Accept", "Authorization", "Cache-Control", "Content-Type", "X-API-Token", "X-IoT-Token", "X-Portal-Token", "X-Request-ID", "X-TTN-Webhook-Secret", "X-FV-CSRF"],
     expose_headers=["X-Request-ID"],
     max_age=600,
 )
@@ -194,6 +195,7 @@ async def production_guards(request: Request, call_next):
 app.mount("/uploads", SafeUploadStaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 app.include_router(auth_router)
 app.include_router(core_admin_router)
+app.include_router(module_backups_router)
 
 
 @app.get("/health", tags=["system"])

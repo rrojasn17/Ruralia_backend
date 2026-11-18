@@ -20,7 +20,7 @@ from services.email_service import send_notification_email
 from services.telegram_service import send_message
 
 
-logger = logging.getLogger("navia-api.ai-automation")
+logger = logging.getLogger("ruralia-api.ai-automation")
 
 
 def utcnow() -> datetime:
@@ -171,9 +171,9 @@ def _deliver(row: AIAutomation, message: str) -> list[dict[str, Any]]:
                 send_notification_email(
                     recipient=str(recipient),
                     recipient_name=None,
-                    subject=f"NAVIA · {row.name}"[:160],
+                    subject=f"ruralIA · {row.name}"[:160],
                     summary=message,
-                    recommended_action="Abra NAVIA para revisar el detalle y los datos de origen.",
+                    recommended_action="Abra ruralIA para revisar el detalle y los datos de origen.",
                     severity="info",
                 )
                 results.append({"channel": "email", "recipient": str(recipient), "status": "sent"})
@@ -185,7 +185,7 @@ def _deliver(row: AIAutomation, message: str) -> list[dict[str, Any]]:
             try:
                 if not telegram_is_configured():
                     raise RuntimeError("Telegram no está configurado")
-                send_message(str(chat_id), f"NAVIA · {row.name}\n\n{message}")
+                send_message(str(chat_id), f"ruralIA · {row.name}\n\n{message}")
                 results.append({"channel": "telegram", "recipient": str(chat_id), "status": "sent"})
             except Exception as exc:
                 logger.exception("Falló automatización %s por Telegram", row.id)
@@ -213,7 +213,7 @@ def _create_in_app_alert(
         severity="warning",
         title=row.name[:180],
         message=message,
-        recommended_action="Abra NAVIA para revisar la finca, la regla y las lecturas de origen.",
+        recommended_action="Abra ruralIA para revisar la finca, la regla y las lecturas de origen.",
         status="sent",
         source_payload={"automation_id": row.id, "metric_key": row.metric_key, "value": result},
         ai_payload={"channels": list(row.channels or []), "in_app": True},

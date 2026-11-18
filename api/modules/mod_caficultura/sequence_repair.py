@@ -8,7 +8,7 @@ def repair_sequences(db: Session, models=None) -> list[str]:
         return []
     if models is None:
         from database import Base
-        tables = [t for t in Base.metadata.sorted_tables if t.name.startswith('navia_') and 'id' in t.c]
+        tables = [t for t in Base.metadata.sorted_tables if t.name.startswith('ruralia_') and 'id' in t.c]
     else:
         tables = [model.__table__ for model in models]
     repaired = []

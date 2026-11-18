@@ -1,4 +1,4 @@
-# NAVIA Backend · producción y notificaciones inteligentes
+# ruralIA Backend · producción y notificaciones inteligentes
 
 API FastAPI + PostgreSQL para gestión cafetalera, recibos, órdenes de trabajo, finca, trazabilidad, ventas, sincronización offline y alertas por correo.
 

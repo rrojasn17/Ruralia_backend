@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 
-TEST_DATABASE_PATH = Path(tempfile.gettempdir()) / f"navia-ai-tests-{uuid.uuid4().hex}.sqlite3"
+TEST_DATABASE_PATH = Path(tempfile.gettempdir()) / f"ruralia-ai-tests-{uuid.uuid4().hex}.sqlite3"
 API_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(API_ROOT))
 

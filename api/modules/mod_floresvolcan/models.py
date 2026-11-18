@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     Boolean, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text,
-    UniqueConstraint,
+    UniqueConstraint, Index, text,
 )
 from sqlalchemy.orm import relationship
 
@@ -130,6 +130,7 @@ class SapProduct(Base):
     color = Column(String(30), nullable=True)
     default_density = Column(Numeric(12, 3), nullable=True)
     default_cycle_weeks = Column(Integer, nullable=True)
+    expected_stems_per_bulb = Column(Numeric(12, 3), nullable=False, default=1)
     created_by_id = Column(Integer, ForeignKey("navia_usuarios.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
@@ -138,6 +139,8 @@ class SapProduct(Base):
 class PurchaseOrder(Base):
     __tablename__ = "fv_purchase_orders"
     id = Column(Integer, primary_key=True)
+    paid_at = Column(Date, nullable=True)
+    shipped_at = Column(Date, nullable=True)
     number = Column(String(40), nullable=False, unique=True, index=True)
     supplier_id = Column(Integer, ForeignKey("fv_suppliers.id"), nullable=False, index=True)
     requested_by_id = Column(Integer, ForeignKey("navia_usuarios.id", ondelete="SET NULL"), nullable=True)
@@ -283,12 +286,14 @@ class Worker(Base):
     __tablename__ = "fv_workers"
     id = Column(Integer, primary_key=True)
     employee_code = Column(String(50), nullable=False, unique=True, index=True)
-    identification = Column(String(80), nullable=False, unique=True, index=True)
+    legacy_employee_code = Column(String(50), nullable=True)
+    identification = Column(String(80), nullable=True, unique=True, index=True)
     name = Column(String(180), nullable=False, index=True)
-    hire_date = Column(Date, nullable=False)
+    hire_date = Column(Date, nullable=True)
     nationality = Column(String(100), nullable=True)
     birth_date = Column(Date, nullable=True)
     daily_salary = Column(Numeric(18, 2), nullable=True)
+    job_title = Column(String(120), nullable=True)
     active = Column(Boolean, nullable=False, default=True)
     user_id = Column(Integer, ForeignKey("navia_usuarios.id", ondelete="SET NULL"), nullable=True, index=True)
 
@@ -322,19 +327,44 @@ class ProductionSpace(Base):
     code = Column(String(60), nullable=False, unique=True, index=True)
     name = Column(String(180), nullable=False)
     type = Column(String(32), nullable=False, index=True)  # farm/greenhouse/land/bed (+ legacy table/row)
+    google_maps_url = Column(String(1000), nullable=True)
     latitude = Column(Numeric(10, 7), nullable=True)
     longitude = Column(Numeric(10, 7), nullable=True)
     area = Column(Numeric(18, 3), nullable=True)
     area_unit = Column(String(20), nullable=False, default="m2")
-    capacity = Column(Numeric(18, 3), nullable=True)  # para bed: m2 utilizables
+    length_m = Column(Numeric(18, 3), nullable=True)
+    width_m = Column(Numeric(18, 3), nullable=True)
+    capacity = Column(Numeric(18, 3), nullable=True)  # área física útil en m²; nunca cantidad de bulbos
     status = Column(String(32), nullable=False, default="active", index=True)
     parent = relationship("ProductionSpace", remote_side=[id])
+
+
+class BedCropProfile(Base):
+    """Configuración reutilizable por cama, cultivo y tipo de material."""
+    __tablename__ = "fv_bed_crop_profiles"
+    id = Column(Integer, primary_key=True)
+    bed_space_id = Column(Integer, ForeignKey("fv_production_spaces.id"), nullable=False, index=True)
+    crop_id = Column(Integer, ForeignKey("fv_flower_crops.id"), nullable=False, index=True)
+    material_type = Column(String(60), nullable=False)
+    input_mode = Column(String(20), nullable=False, default="units")
+    capacity_units = Column(Integer, nullable=False)
+    density = Column(Numeric(18, 6), nullable=False)
+    active = Column(Boolean, nullable=False, default=True)
+    __table_args__ = (UniqueConstraint("bed_space_id", "crop_id", "material_type", name="uq_fv_bed_crop_material"),)
 
 
 class PlantingOrder(Base):
     __tablename__ = "fv_planting_orders"
     id = Column(Integer, primary_key=True)
     crop_id = Column(Integer, ForeignKey("fv_flower_crops.id", ondelete="SET NULL"), nullable=True, index=True)
+    bed_profile_id = Column(Integer, ForeignKey("fv_bed_crop_profiles.id"), nullable=True, index=True)
+    planned_quantity = Column(Integer, nullable=True)
+    qr_token = Column(String(64), nullable=True, unique=True)
+    bed_area_snapshot = Column(Numeric(18, 3), nullable=True)
+    bed_capacity_snapshot = Column(Integer, nullable=True)
+    density_snapshot = Column(Numeric(18, 6), nullable=True)
+    material_type_snapshot = Column(String(60), nullable=True)
+    crop_name_snapshot = Column(String(120), nullable=True)
     number = Column(String(50), nullable=False, unique=True, index=True)
     production_space_id = Column(Integer, ForeignKey("fv_production_spaces.id"), nullable=False, index=True)
     crew_id = Column(Integer, ForeignKey("fv_work_crews.id"), nullable=False, index=True)
@@ -347,6 +377,18 @@ class PlantingOrder(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     comments = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class PlantingOrderBed(Base):
+    """Camas planificadas; cada combinación cama/cultivo tiene su cupo."""
+    __tablename__ = 'fv_planting_order_beds'
+    __table_args__ = (UniqueConstraint('planting_order_id', 'bed_space_id', name='uq_fv_order_bed'),)
+    id = Column(Integer, primary_key=True)
+    planting_order_id = Column(Integer, ForeignKey('fv_planting_orders.id', ondelete='CASCADE'), nullable=False, index=True)
+    bed_space_id = Column(Integer, ForeignKey('fv_production_spaces.id'), nullable=False, index=True)
+    bed_profile_id = Column(Integer, ForeignKey('fv_bed_crop_profiles.id'), nullable=False)
+    capacity_units_snapshot = Column(Integer, nullable=False)
+    planted_quantity = Column(Integer, nullable=False, default=0)
 
 
 class Requisition(Base):
@@ -373,6 +415,9 @@ class RequisitionLine(Base):
     quantity_approved = Column(Numeric(18, 3), nullable=False, default=0)
     quantity_delivered = Column(Numeric(18, 3), nullable=False, default=0)  # legacy v0.3; no se usa en el flujo nuevo
     quantity_planted = Column(Numeric(18, 3), nullable=False, default=0)
+    quantity_returned = Column(Numeric(18, 3), nullable=False, default=0)
+    quantity_field_loss = Column(Numeric(18, 3), nullable=False, default=0)
+    quantity_released = Column(Numeric(18, 3), nullable=False, default=0)
     requisition = relationship("Requisition", back_populates="lines")
     inventory_lot = relationship("InventoryLot")
 
@@ -420,6 +465,7 @@ class ProductionBatch(Base):
     """Lote productivo: lote de origen + cama + lado + semana de siembra."""
     __tablename__ = "fv_production_batches"
     id = Column(Integer, primary_key=True)
+    bed_cycle_id = Column(Integer, ForeignKey("fv_bed_cycles.id"), nullable=True, index=True)
     crop_id = Column(Integer, ForeignKey("fv_flower_crops.id", ondelete="SET NULL"), nullable=True, index=True)
     code = Column(String(90), nullable=False, unique=True, index=True)
     planting_order_id = Column(Integer, ForeignKey("fv_planting_orders.id"), nullable=False, index=True)
@@ -432,6 +478,8 @@ class ProductionBatch(Base):
     planting_week = Column(String(12), nullable=True, index=True)
     projected_harvest_week = Column(String(12), nullable=True)
     cycle_weeks = Column(Integer, nullable=True)
+    expected_stems_per_bulb = Column(Numeric(12, 3), nullable=False, default=1)
+    history_review_required = Column(Boolean, nullable=False, default=False)
     status = Column(String(32), nullable=False, default="open", index=True)
     opened_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     closed_at = Column(DateTime(timezone=True), nullable=True)
@@ -441,7 +489,10 @@ class PlantingRecord(Base):
     """Evento/segmento de siembra; una cama puede contener varios registros y lotes."""
     __tablename__ = "fv_planting_records"
     id = Column(Integer, primary_key=True)
+    bed_capacity_units_snapshot = Column(Integer, nullable=True)
+    worker_id = Column(Integer, ForeignKey("fv_workers.id"), nullable=True, index=True)
     client_token = Column(String(80), nullable=True, unique=True, index=True)
+    request_hash = Column(String(64), nullable=True)
     production_batch_id = Column(Integer, ForeignKey("fv_production_batches.id"), nullable=False, index=True)
     planting_order_id = Column(Integer, ForeignKey("fv_planting_orders.id"), nullable=False, index=True)
     requisition_line_id = Column(Integer, ForeignKey("fv_requisition_lines.id"), nullable=False, index=True)
@@ -453,7 +504,7 @@ class PlantingRecord(Base):
     table_space_id = Column(Integer, ForeignKey("fv_production_spaces.id"), nullable=True, index=True)
     row_space_id = Column(Integer, ForeignKey("fv_production_spaces.id"), nullable=True, index=True)
     quantity_planted = Column(Numeric(18, 3), nullable=False)
-    density = Column(Numeric(12, 3), nullable=True)
+    density = Column(Numeric(18, 6), nullable=True)
     area_m2 = Column(Numeric(18, 4), nullable=True)
     cycle_weeks = Column(Integer, nullable=True)
     planting_week = Column(String(12), nullable=True, index=True)
@@ -469,9 +520,12 @@ class HarvestRecord(Base):
     """Corte parcial. Se permiten múltiples eventos por lote productivo."""
     __tablename__ = "fv_harvest_records"
     id = Column(Integer, primary_key=True)
+    worker_id = Column(Integer, ForeignKey("fv_workers.id"), nullable=True, index=True)
     client_token = Column(String(80), nullable=True, unique=True, index=True)
+    request_hash = Column(String(64), nullable=True)
     production_batch_id = Column(Integer, ForeignKey("fv_production_batches.id"), nullable=False, index=True)
     planting_record_id = Column(Integer, ForeignKey("fv_planting_records.id"), nullable=True, index=True)
+    harvest_order_id = Column(Integer, ForeignKey("fv_harvest_orders.id"), nullable=True, index=True)
     bed_space_id = Column(Integer, ForeignKey("fv_production_spaces.id"), nullable=True, index=True)
     table_space_id = Column(Integer, ForeignKey("fv_production_spaces.id"), nullable=True, index=True)
     row_space_id = Column(Integer, ForeignKey("fv_production_spaces.id"), nullable=True, index=True)
@@ -487,6 +541,9 @@ class HarvestRecord(Base):
     actual_harvest_week = Column(String(12), nullable=True, index=True)
     harvested_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     notes = Column(Text, nullable=True)
+    voided_at = Column(DateTime(timezone=True), nullable=True)
+    voided_by_id = Column(Integer, ForeignKey("navia_usuarios.id"), nullable=True)
+    void_reason = Column(String(1000), nullable=True)
 
 
 class TechnicalClosure(Base):
@@ -497,9 +554,165 @@ class TechnicalClosure(Base):
     total_harvested = Column(Numeric(18, 3), nullable=False)  # salida total contabilizada
     total_sale = Column(Numeric(18, 3), nullable=False, default=0)
     total_discarded = Column(Numeric(18, 3), nullable=False, default=0)
+    total_expected = Column(Numeric(18, 3), nullable=False, default=0)
+    total_loss = Column(Numeric(18, 3), nullable=False, default=0)
     difference = Column(Numeric(18, 3), nullable=False)
     yield_percentage = Column(Numeric(9, 3), nullable=False)
     sale_yield_percentage = Column(Numeric(9, 3), nullable=False, default=0)
     closed_by_id = Column(Integer, ForeignKey("navia_usuarios.id", ondelete="SET NULL"), nullable=True)
     closed_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     comments = Column(Text, nullable=False)
+    previous_summary_json = Column(Text, nullable=True)
+
+
+class HarvestOrder(Base):
+    """OT de corte autorizada: un lote productivo y una cuadrilla por orden."""
+    __tablename__ = "fv_harvest_orders"
+    id = Column(Integer, primary_key=True)
+    qr_token = Column(String(64), nullable=True, unique=True)
+    number = Column(String(55), nullable=False, unique=True, index=True)
+    production_batch_id = Column(Integer, ForeignKey("fv_production_batches.id"), nullable=False, index=True)
+    crew_id = Column(Integer, ForeignKey("fv_work_crews.id"), nullable=False, index=True)
+    status = Column(String(30), nullable=False, default="pending_approval", index=True)
+    planned_date = Column(Date, nullable=False)
+    early_release_reason = Column(Text, nullable=True)
+    allow_overage = Column(Boolean, nullable=False, default=False)
+    overage_quantity = Column(Numeric(18, 3), nullable=False, default=0)
+    overage_reason = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_by_id = Column(Integer, ForeignKey("navia_usuarios.id", ondelete="SET NULL"), nullable=True)
+    approved_by_id = Column(Integer, ForeignKey("navia_usuarios.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class BedCycle(Base):
+    """Ocupación física compartida por todos los lotes de una cama hasta su limpieza."""
+    __tablename__ = "fv_bed_cycles"
+    id = Column(Integer, primary_key=True)
+    bed_space_id = Column(Integer, ForeignKey("fv_production_spaces.id"), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="growing", index=True)
+    opened_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    cleaned_at = Column(DateTime(timezone=True), nullable=True)
+    cleaned_by_id = Column(Integer, ForeignKey("navia_usuarios.id"), nullable=True)
+    cleaning_notes = Column(Text, nullable=True)
+    __table_args__ = (
+        Index("uq_fv_bed_active_cycle", "bed_space_id", unique=True,
+              postgresql_where=text("status != 'cleaned'"), sqlite_where=text("status != 'cleaned'")),
+    )
+
+
+class SegmentReconciliation(Base):
+    __tablename__ = "fv_segment_reconciliations"
+    id = Column(Integer, primary_key=True)
+    planting_record_id = Column(Integer, ForeignKey("fv_planting_records.id"), nullable=False, unique=True, index=True)
+    technical_closure_id = Column(Integer, ForeignKey("fv_technical_closures.id"), nullable=False, index=True)
+    expected_quantity = Column(Numeric(18, 3), nullable=False)
+    output_quantity = Column(Numeric(18, 3), nullable=False)
+    loss_quantity = Column(Numeric(18, 3), nullable=False, default=0)
+    overage_quantity = Column(Numeric(18, 3), nullable=False, default=0)
+    loss_reason = Column(String(1000), nullable=True)
+
+
+class MaterialResolution(Base):
+    """Destino auditado del material entregado sin sembrar o de una reserva liberada."""
+    __tablename__ = "fv_material_resolutions"
+    id = Column(Integer, primary_key=True)
+    client_token = Column(String(80), nullable=True, unique=True, index=True)
+    request_hash = Column(String(64), nullable=True)
+    requisition_line_id = Column(Integer, ForeignKey("fv_requisition_lines.id"), nullable=False, index=True)
+    kind = Column(String(32), nullable=False)
+    quantity = Column(Numeric(18, 3), nullable=False)
+    comments = Column(Text, nullable=False)
+    user_id = Column(Integer, ForeignKey("navia_usuarios.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class HistoricalOverageApproval(Base):
+    __tablename__ = "fv_historical_overage_approvals"
+    id = Column(Integer, primary_key=True)
+    production_batch_id = Column(Integer, ForeignKey("fv_production_batches.id"), nullable=False, index=True)
+    quantity = Column(Numeric(18, 3), nullable=False)
+    comments = Column(Text, nullable=False)
+    approved_by_id = Column(Integer, ForeignKey("navia_usuarios.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class PaperCapture(Base):
+    """Original manuscrito preservado; la IA propone, pero no contabiliza movimientos."""
+    __tablename__ = "fv_paper_captures"
+    id = Column(Integer, primary_key=True)
+    capture_key = Column(String(40), nullable=False, unique=True, index=True)
+    operation = Column(String(20), nullable=False)
+    planting_order_id = Column(Integer, ForeignKey("fv_planting_orders.id"), nullable=True)
+    harvest_order_id = Column(Integer, ForeignKey("fv_harvest_orders.id"), nullable=True)
+    storage_key = Column(String(500), nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    mime_type = Column(String(60), nullable=False)
+    suggested_json = Column(Text, nullable=True)
+    status = Column(String(25), nullable=False, default="pending_review")
+    linked_record_id = Column(Integer, nullable=True)
+    created_by_id = Column(Integer, ForeignKey("navia_usuarios.id", ondelete="SET NULL"), nullable=False)
+    reviewed_by_id = Column(Integer, ForeignKey("navia_usuarios.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class ExcelImportRun(Base):
+    """Provenance of a historical workbook; importing never executes its content."""
+    __tablename__ = "fv_excel_import_runs"
+    id = Column(Integer, primary_key=True)
+    filename = Column(String(255), nullable=False)
+    sha256 = Column(String(64), nullable=False, unique=True)
+    comparison_filename = Column(String(255), nullable=True)
+    comparison_sha256 = Column(String(64), nullable=True)
+    summary_json = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class ExcelImportRow(Base):
+    """Every original row survives, including ambiguous and invalid records."""
+    __tablename__ = "fv_excel_import_rows"
+    id = Column(Integer, primary_key=True)
+    import_run_id = Column(Integer, ForeignKey("fv_excel_import_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    sheet = Column(String(40), nullable=False, index=True)
+    source_row = Column(Integer, nullable=False)
+    raw_json = Column(Text, nullable=False)
+    issues_json = Column(Text, nullable=False, default="[]")
+    links_json = Column(Text, nullable=False, default="{}")
+    status = Column(String(20), nullable=False, default="review", index=True)
+    search_text = Column(Text, nullable=False)
+    __table_args__ = (UniqueConstraint("import_run_id", "sheet", "source_row", name="uq_fv_excel_source_row"),)
+
+
+class FieldAccessSession(Base):
+    """Sesión separada del acceso al sistema, limitada a una sola orden."""
+    __tablename__ = "fv_field_access_sessions"
+    id = Column(Integer, primary_key=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    worker_id = Column(Integer, ForeignKey("fv_workers.id"), nullable=False, index=True)
+    operation = Column(String(20), nullable=False)
+    order_id = Column(Integer, nullable=False, index=True)
+    code_hash = Column(String(64), nullable=False)
+    csrf_token = Column(String(64), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class FieldAccessAttempt(Base):
+    __tablename__ = "fv_field_access_attempts"
+    id = Column(Integer, primary_key=True)
+    scope_hash = Column(String(64), nullable=False, index=True)
+    ip_hash = Column(String(64), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+
+
+class BusinessStatus(Base):
+    __tablename__ = "fv_business_status"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("navia_usuarios.id"), nullable=False, index=True)
+    scope_hash = Column(String(64), nullable=False, unique=True)
+    severity = Column(String(20), nullable=False, default="info")
+    message = Column(String(300), nullable=False)
+    source = Column(String(30), nullable=False, default="rules")
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)

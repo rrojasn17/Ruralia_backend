@@ -15,6 +15,7 @@ from modules.mod_floresvolcan.models import (
     PurchaseOrder, RequisitionDelivery, RequisitionLine, SapProduct, Supplier,
     WorkCrewMember,
 )
+from .production_control import batch_segments, local_date
 
 HEADERS = {
     "Entradas": ["COD","Variedad","Calibre","Comun","Fecha de Ingreso","Contenedor","Lote","Cosecha","Proveedor","Cajas","Cantidad por Caja","Total Bulbos"],
@@ -92,7 +93,7 @@ def build_lirio_workbook(db: Session, title: str = "Lirio") -> bytes:
         common = lot.common_code_snapshot or (product.common_code if product else "")
         ws.append([
             _legacy_code(variety, caliber, lot.container_number, lot.supplier_lot_code), variety, caliber, common,
-            lot.received_at.date() if lot.received_at else None, lot.container_number, lot.supplier_lot_code, lot.harvest_year,
+            local_date(lot.received_at) if lot.received_at else None, lot.container_number, lot.supplier_lot_code, lot.harvest_year,
             supplier.code if supplier else "", _n(lot.boxes_received), _n(lot.units_per_box), _n(lot.quantity_received),
         ])
     _style_sheet(ws)
@@ -113,12 +114,12 @@ def build_lirio_workbook(db: Session, title: str = "Lirio") -> bytes:
             _legacy_code(variety, caliber, lot.container_number if lot else "", lot.supplier_lot_code if lot else ""),
             variety, caliber, common, lot.container_number if lot else "", lot.supplier_lot_code if lot else "",
             supplier.code if supplier else "", _n(lot.boxes_received if lot else 0), boxes, d.delivery_week,
-            d.delivered_at.date() if d.delivered_at else None, units_per_box, _n(d.quantity),
+            local_date(d.delivered_at) if d.delivered_at else None, units_per_box, _n(d.quantity),
         ])
     _style_sheet(ws)
 
     # Siembra
-    ws = wb.create_sheet("Siembra"); ws.append(HEADERS["Siembra"])
+    ws = wb.create_sheet("Siembra"); ws.append(HEADERS["Siembra"] + ["ID SIEMBRA", "ID LOTE PRODUCTIVO", "ID CICLO MESA", "ID INVENTARIO"])
     plantings = db.query(PlantingRecord).order_by(PlantingRecord.planted_at, PlantingRecord.id).all()
     for pr in plantings:
         lot = db.query(InventoryLot).filter(InventoryLot.id == pr.inventory_lot_id).first()
@@ -131,36 +132,66 @@ def build_lirio_workbook(db: Session, title: str = "Lirio") -> bytes:
         common = (lot.common_code_snapshot if lot else None) or (product.common_code if product else "")
         color = (lot.color_snapshot if lot else None) or (product.color if product else "")
         inv = greenhouse.name if greenhouse else ""; bed_label = (bed.name.replace("Cama ", "") if bed else "")
-        key = f"{inv}{lot.supplier_lot_code if lot else ''}{pr.planting_week or ''}{bed_label}"
+        key = f"SIEMBRA-{pr.id}"
         ws.append([
             key, lot.supplier_lot_code if lot else "", inv, pr.side, bed_label, common, supplier.code if supplier else "",
             color, variety, _n(pr.quantity_planted), pr.cycle_weeks, pr.planting_week,
-            pr.planted_at.date() if pr.planted_at else None, pr.projected_harvest_week, caliber, _n(pr.density),
+            local_date(pr.planted_at) if pr.planted_at else None, pr.projected_harvest_week, caliber, _n(pr.density),
             pr.sealed_at, _crew_label(db, pr.crew_id), _n(pr.area_m2),
+            pr.id, pr.production_batch_id, batch.bed_cycle_id if batch else None, pr.inventory_lot_id,
         ])
     _style_sheet(ws)
 
     # Corta
-    ws = wb.create_sheet("Corta"); ws.append(HEADERS["Corta"])
-    cuts = db.query(HarvestRecord).order_by(HarvestRecord.harvested_at, HarvestRecord.id).all()
+    ws = wb.create_sheet("Corta"); ws.append(HEADERS["Corta"] + ["ID CORTA", "ID SIEMBRA", "ID LOTE PRODUCTIVO", "ID CICLO MESA", "LADO", "ESTADO VINCULO"])
+    ws.cell(1, 9, "SEMBRADO DEL SEGMENTO (NO SUMAR)")
+    cuts = db.query(HarvestRecord).filter(HarvestRecord.voided_at.is_(None)).order_by(HarvestRecord.harvested_at, HarvestRecord.id).all()
     for cut in cuts:
         batch = db.query(ProductionBatch).filter(ProductionBatch.id == cut.production_batch_id).first()
         lot = db.query(InventoryLot).filter(InventoryLot.id == batch.inventory_lot_id).first() if batch and batch.inventory_lot_id else None
         product = _product(db, lot, batch.sap_product_id if batch else None); supplier = _supplier_for_lot(db, lot) if lot else None
         greenhouse = _space(db, batch.greenhouse_space_id if batch else None); bed = _space(db, batch.bed_space_id if batch else None)
-        planted = db.query(func.coalesce(func.sum(PlantingRecord.quantity_planted), 0)).filter(PlantingRecord.production_batch_id == cut.production_batch_id).scalar()
+        segment = db.query(PlantingRecord).filter(PlantingRecord.id == cut.planting_record_id).first() if cut.planting_record_id else None
+        planted = segment.quantity_planted if segment else None
         variety = (lot.variety_snapshot if lot else None) or (product.variety if product else "")
         common = (lot.common_code_snapshot if lot else None) or (product.common_code if product else "")
         color = (lot.color_snapshot if lot else None) or (product.color if product else "")
         inv = greenhouse.name if greenhouse else ""; bed_label = bed.name.replace("Cama ", "") if bed else ""
-        key = f"{inv}{lot.supplier_lot_code if lot else ''}{batch.planting_week if batch else ''}{bed_label}"
+        key = f"SIEMBRA-{segment.id}" if segment else f"SIN-ASIGNAR-{cut.id}"
         ws.append([
             key, lot.supplier_lot_code if lot else "", inv, bed_label, common, supplier.code if supplier else "", color,
-            variety, _n(planted), batch.planting_week if batch else None, batch.projected_harvest_week if batch else None,
-            cut.actual_harvest_week, cut.harvested_at.date() if cut.harvested_at else None, _n(cut.discard_qty),
+            variety, _n(planted) if planted is not None else None, segment.planting_week if segment else None, segment.projected_harvest_week if segment else None,
+            cut.actual_harvest_week, local_date(cut.harvested_at) if cut.harvested_at else None, _n(cut.discard_qty),
             cut.discard_reason, _n(cut.bloom_1_qty), _n(cut.bloom_2_qty), _n(cut.bloom_3_5_qty),
             _n(cut.quantity_harvested), _n(cut.total_output),
+            cut.id, cut.planting_record_id, cut.production_batch_id, batch.bed_cycle_id if batch else None,
+            segment.side if segment else None, "VINCULADO" if segment else "PENDIENTE DE ASIGNACION",
         ])
+    _style_sheet(ws)
+
+    ws = wb.create_sheet("Cortas anuladas")
+    ws.append(["ID CORTA", "ID SIEMBRA", "ID LOTE PRODUCTIVO", "FECHA CORTA", "VENTA ORIGINAL", "DESCARTE ORIGINAL", "SALIDA ORIGINAL", "FECHA ANULACION", "USUARIO ANULACION", "MOTIVO"])
+    for cut in db.query(HarvestRecord).filter(HarvestRecord.voided_at.isnot(None)).order_by(HarvestRecord.id).all():
+        ws.append([cut.id, cut.planting_record_id, cut.production_batch_id, local_date(cut.harvested_at),
+                   _n(cut.quantity_harvested), _n(cut.discard_qty), _n(cut.total_output),
+                   local_date(cut.voided_at), cut.voided_by_id, cut.void_reason])
+    _style_sheet(ws)
+
+    # Única base sumable de comparación: una fila por segmento, nunca por visita.
+    ws = wb.create_sheet("Conciliacion")
+    ws.append(["ID SIEMBRA", "ID LOTE PRODUCTIVO", "ID CICLO MESA", "CAMA", "LADO", "VARIEDAD", "LOTE ORIGEN", "PROVEEDOR", "CONTENEDOR", "FECHA SIEMBRA", "SEMBRADOS", "FACTOR TALLOS/UNIDAD", "TALLOS ESPERADOS", "VENTA", "DESCARTE", "SALIDA TOTAL", "MERMA POTENCIAL JUSTIFICADA", "MOTIVO MERMA", "SALDO TECNICO", "EXCEDENTE", "ESTADO LOTE"])
+    for batch in db.query(ProductionBatch).order_by(ProductionBatch.id).all():
+        lot = db.query(InventoryLot).filter(InventoryLot.id == batch.inventory_lot_id).first()
+        supplier = _supplier_for_lot(db, lot) if lot else None
+        product = _product(db, lot, batch.sap_product_id)
+        bed = _space(db, batch.bed_space_id)
+        for segment in batch_segments(db, batch):
+            ws.append([segment["id"], batch.id, batch.bed_cycle_id, bed.code if bed else None, segment["side"],
+                       lot.variety_snapshot if lot else product.variety if product else None,
+                       lot.supplier_lot_code if lot else None, supplier.code if supplier else None, lot.container_number if lot else None,
+                       local_date(segment["planted_at"]), _n(segment["quantity_planted"]), _n(batch.expected_stems_per_bulb),
+                       _n(segment["expected_stems"]), _n(segment["sale"]), _n(segment["discarded"]), _n(segment["harvested"]),
+                       _n(segment["loss_quantity"]), segment["loss_reason"], _n(segment["remaining"]), _n(segment["overage"]), batch.status])
     _style_sheet(ws)
 
     # COMANDOS familiar: columnas separadas por una columna vacía.

@@ -15,13 +15,13 @@ logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
-logger = logging.getLogger("navia-module-worker")
+logger = logging.getLogger("ruralia-module-worker")
 STOP_REQUESTED = False
 POLL_SECONDS = max(1, int(os.getenv("MODULE_WORKER_POLL_SECONDS", str(NOTIFICATION_POLL_SECONDS))))
 HEARTBEAT_PATH = Path(
     os.getenv(
         "MODULE_WORKER_HEARTBEAT_PATH",
-        os.getenv("NOTIFICATION_HEARTBEAT_PATH", "/tmp/navia-module-worker-heartbeat"),
+        os.getenv("NOTIFICATION_HEARTBEAT_PATH", "/tmp/ruralia-module-worker-heartbeat"),
     )
 )
 

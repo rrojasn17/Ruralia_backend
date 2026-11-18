@@ -21,7 +21,7 @@ from services.telegram_service import (
 )
 
 
-logger = logging.getLogger("navia-api.telegram-bridge")
+logger = logging.getLogger("ruralia-api.telegram-bridge")
 
 
 def utcnow() -> datetime:
@@ -66,7 +66,7 @@ def _pair(db, message: dict[str, Any], code: str) -> None:
         return
     occupied = db.query(AITelegramConnection).filter(AITelegramConnection.chat_id == chat_id).first()
     if occupied and occupied.usuario_id != pairing.usuario_id:
-        send_message(chat_id, "Este chat ya está vinculado a otra cuenta de NAVIA. Desvincúlelo desde esa cuenta primero.")
+        send_message(chat_id, "Este chat ya está vinculado a otra cuenta de ruralIA. Desvincúlelo desde esa cuenta primero.")
         return
     connection = occupied or AITelegramConnection(usuario_id=pairing.usuario_id, chat_id=chat_id)
     connection.chat_username = username
@@ -79,7 +79,7 @@ def _pair(db, message: dict[str, Any], code: str) -> None:
     db.commit()
     send_message(
         chat_id,
-        f"Listo, {pairing.usuario.nombre}. Este chat quedó vinculado de forma segura con NAVIA. "
+        f"Listo, {pairing.usuario.nombre}. Este chat quedó vinculado de forma segura con ruralIA. "
         "Ya puede consultar métricas, alertas, trabajadores y trazabilidad.",
     )
 
@@ -152,7 +152,7 @@ def _handle_message(db, update: dict[str, Any], message: dict[str, Any], request
         _pair(db, message, text.split(maxsplit=1)[1].strip())
         return
     if text.lower() in {"/start", "/ayuda", "/help"}:
-        send_message(chat_id, "Abra NAVIA → Configuración → Agentes IA, genere un código y envíe: /vincular CÓDIGO")
+        send_message(chat_id, "Abra ruralIA → Configuración → Agentes IA, genere un código y envíe: /vincular CÓDIGO")
         return
 
     connection = (
@@ -162,7 +162,7 @@ def _handle_message(db, update: dict[str, Any], message: dict[str, Any], request
         .first()
     )
     if not connection or not _manager(connection.usuario):
-        send_message(chat_id, "Este chat no está autorizado. Vincúlelo desde una cuenta gerente o administradora de NAVIA.")
+        send_message(chat_id, "Este chat no está autorizado. Vincúlelo desde una cuenta gerente o administradora de ruralIA.")
         return
     user = connection.usuario
     connection.last_seen_at = utcnow()
@@ -210,7 +210,7 @@ def _handle_message(db, update: dict[str, Any], message: dict[str, Any], request
                 stored_path.unlink(missing_ok=True)
             raise
     if not user_message.content and not file_spec:
-        send_message(chat_id, "Envíe un mensaje, audio, imagen, documento o ubicación para consultar NAVIA.")
+        send_message(chat_id, "Envíe un mensaje, audio, imagen, documento o ubicación para consultar ruralIA.")
         return
     conversation.last_message_at = utcnow()
     try:
@@ -349,7 +349,7 @@ def process_telegram_update(update: dict[str, Any]) -> None:
             logger.exception("No se pudo registrar el cierre de la actualización %s", request_id)
         if chat_id:
             try:
-                send_message(chat_id, "No pude completar la solicitud. Los datos de NAVIA no fueron modificados. Inténtelo nuevamente.")
+                send_message(chat_id, "No pude completar la solicitud. Los datos de ruralIA no fueron modificados. Inténtelo nuevamente.")
             except TelegramError:
                 logger.exception("Tampoco se pudo notificar el error por Telegram")
     finally:

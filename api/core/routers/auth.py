@@ -139,8 +139,13 @@ def require_roles(*roles: str):
 
 
 def require_core_permission(permission: str):
-    """Autoriza capacidades del core sin acoplarlas a perfiles de industria."""
-    def dep(current: Usuario = Depends(get_current_user)) -> Usuario:
+    """Autoriza el core; administración global no hereda roles de Flores Volcán."""
+    def dep(current: Usuario = Depends(get_current_user), db: Session = Depends(get_db)) -> Usuario:
+        if permission == 'core:users:manage' and not current.is_superadmin:
+            from core.module_manager import get_active_industry_module
+            active = get_active_industry_module(db)
+            if active and active.key == 'mod_floresvolcan':
+                raise HTTPException(status_code=403, detail='Los usuarios globales solo los administra Root; use usuarios del módulo')
         permissions = set(core_permissions_for_user(current))
         if "*" in permissions or permission in permissions:
             return current

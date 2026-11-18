@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections import defaultdict
-import json
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
@@ -15,11 +14,11 @@ import qrcode
 from PIL import Image, UnidentifiedImageError
 from qrcode.image.svg import SvgImage
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Response, Request
-from sqlalchemy import func, or_, text
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from config import ADMIN_EMAIL, APP_BASE_URL, APP_NAME, APP_VERSION, MAX_REQUEST_MB
+from config import ADMIN_EMAIL, APP_BASE_URL, APP_NAME, MAX_REQUEST_MB
 from database import get_db
 from modules.mod_caficultura.models import (
     ActividadFinca,
@@ -173,7 +172,7 @@ from modules.mod_caficultura.receipt_import import (
     import_historical_receipts,
 )
 
-router = APIRouter(tags=["navia"])
+router = APIRouter(tags=["ruralia"])
 
 def make_qr_svg(data: str) -> str:
     img = qrcode.make(data, image_factory=SvgImage)
@@ -296,7 +295,7 @@ def build_alert_links(db: Session, message: str) -> tuple[str | None, str | None
     email = get_config_value(db, "alert_email", "").strip()
     encoded = quote(message)
     whatsapp_url = f"https://wa.me/{phone}?text={encoded}" if phone else None
-    correo_url = f"mailto:{email}?subject={quote('Alerta NAVIA')}&body={encoded}" if email else None
+    correo_url = f"mailto:{email}?subject={quote('Alerta ruralIA')}&body={encoded}" if email else None
     return whatsapp_url, correo_url
 
 def validate_signature_image(content: bytes) -> str:
@@ -1718,7 +1717,7 @@ def create_seguimiento(ot_id: int, payload: SeguimientoCreate, current: Usuario 
     alerta_correo_url = None
     if payload.dar_alerta:
         mensaje = (
-            f"ALERTA NAVIA · Lote {row.codigo_lote} · Actividad: {payload.actividad_realizada.strip()} · "
+            f"ALERTA ruralIA · Lote {row.codigo_lote} · Actividad: {payload.actividad_realizada.strip()} · "
             f"Reporta: {current.nombre}. {alerta_mensaje or ''}"
         ).strip()
         alerta_whatsapp_url, alerta_correo_url = build_alert_links(db, mensaje)
@@ -2852,51 +2851,12 @@ async def import_gestion_fincas_catalogo(catalogo: str, file: UploadFile = File(
 
 IOT_BACKUP_MODELS = [IoTIntegration, IoTNode, IoTReading, IoTDashboardPreset]
 
-BACKUP_MODELS = [
-    Usuario,
-    ConfiguracionSistema,
-    ReciboConsecutivo,
-    Cliente,
-    Finca,
-    ReciboCafe,
-    OrdenTrabajo,
-    OrdenTrabajoUnionOrigen,
-    OrdenTrabajoRecibo,
-    ActividadFinca,
-    TrabajadorFinca,
-    InsumoFinca,
-    NotaRapida,
-    Proveedor,
-    ProveedorContacto,
-    CompraInsumoFactura,
-    CompraInsumoLinea,
-    RegistroFinca,
-    RegistroFincaTrabajador,
-    RegistroFincaInsumo,
-    SeguimientoOT,
-    DocumentoLote,
-    ComentarioLote,
-    CotizacionVenta,
-    CotizacionVentaLinea,
-    SolicitudSalidaVenta,
-    SolicitudSalidaVentaLinea,
-    VentaLeadLote,
-    VentaSeguimiento,
-    SolicitudVenta,
-    SolicitudVentaLinea,
-    SolicitudVentaLineaLiquidacion,
-    SolicitudVentaSeguimiento,
-    SolicitudVentaDocumento,
-    *IOT_BACKUP_MODELS,
-]
-
-
 def reset_data_tables():
     from database import Base
     from modules.mod_caficultura.lifecycle import _module_tables
 
     owned = {table.name for table in _module_tables()}
-    # The receipt counter is part of the base configuration.
+    # Manual development cleanup preserves the receipt numbering sequence.
     owned.discard(ReciboConsecutivo.__tablename__)
     return [table for table in reversed(Base.metadata.sorted_tables) if table.name in owned]
 
@@ -2909,158 +2869,24 @@ def serialize_backup_value(value):
     return value
 
 
-def model_to_backup_dict(row) -> dict:
-    return {column.name: serialize_backup_value(getattr(row, column.name)) for column in row.__table__.columns}
-
-
-def parse_backup_value(column, value):
-    if value is None:
-        return None
-    try:
-        python_type = column.type.python_type
-    except Exception:
-        python_type = None
-
-    if python_type is datetime and isinstance(value, str):
-        return datetime.fromisoformat(value)
-    if python_type is date and isinstance(value, str):
-        return date.fromisoformat(value)
-    return value
-
-
 @router.get("/respaldos/exportar")
 def exportar_respaldo(current: Usuario = Depends(require_roles("gerente")), db: Session = Depends(get_db), format: Literal["json", "zip"] = "json"):
-    from modules.mod_caficultura.backup_archive import build_archive, snapshot_models
-
-    payload = {
-        "schema": "navia_backup_v2",
-        "module": "mod_caficultura",
-        "app_version": APP_VERSION,
-        "exported_at": utcnow().isoformat(),
-        "exported_by": {"id": current.id, "nombre": current.nombre, "correo": current.correo},
-        "files_included": False,
-        "tables": {},
-    }
-    # A separate transaction gives PostgreSQL a consistent snapshot even when
-    # authentication already queried the request session.
-    with Session(bind=db.get_bind()) as snapshot:
-        if snapshot.get_bind().dialect.name == "postgresql":
-            snapshot.connection(execution_options={"isolation_level": "REPEATABLE READ"})
-        for model in snapshot_models():
-            rows = snapshot.query(model).order_by(model.id.asc()).all()
-            payload["tables"][model.__tablename__] = [model_to_backup_dict(row) for row in rows]
-    filename = f"navia-respaldo-{utcnow().strftime('%Y%m%d-%H%M%S')}.{format}"
-    content = build_archive(payload) if format == "zip" else json.dumps(payload, ensure_ascii=False, indent=2)
-    return Response(
-        content=content,
-        media_type="application/zip" if format == "zip" else "application/json",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    from core.module_backups import export_bytes, resolve_backup_spec
+    content = export_bytes(db, resolve_backup_spec('mod_caficultura'), archive=format == 'zip')
+    filename = f"ruralia-caficultura-respaldo-{utcnow().strftime('%Y%m%d-%H%M%S')}.{format}"
+    return Response(content=content, media_type='application/zip' if format == 'zip' else 'application/json',
+                    headers={'Content-Disposition': f'attachment; filename="{filename}"'})
 
 
 @router.post("/respaldos/importar")
 async def importar_respaldo(file: UploadFile = File(...), current: Usuario = Depends(require_roles("gerente")), db: Session = Depends(get_db), mode: Literal["merge", "replace"] = "merge"):
-    from modules.mod_caficultura.backup_archive import FileRestore, read_backup, snapshot_models
-    from modules.mod_caficultura.backup_restore import reconcile_backup_rows
-
-    if mode == "replace":
+    from core.module_backups import restore_bytes, resolve_backup_spec
+    if mode == 'replace':
         ensure_bootstrap_superadmin(current)
     raw = await file.read(MAX_REQUEST_MB * 1024 * 1024 + 1)
     if len(raw) > MAX_REQUEST_MB * 1024 * 1024:
-        raise HTTPException(status_code=413, detail=f"El respaldo no debe superar {MAX_REQUEST_MB} MB")
-    payload, files = read_backup(raw)
-    if isinstance(payload, dict) and payload.get("files_included") is True and files is None:
-        raise HTTPException(422, "El respaldo declara archivos que no están incluidos en un ZIP")
-    if not isinstance(payload, dict) or payload.get("schema") not in {"navia_backup_v1", "navia_backup_v2"} or not isinstance(payload.get("tables"), dict):
-        raise HTTPException(status_code=422, detail="El archivo no corresponde a un respaldo NAVIA compatible")
-    if payload.get("module", "mod_caficultura") != "mod_caficultura":
-        raise HTTPException(status_code=422, detail="Este respaldo pertenece a otro módulo")
-    models = snapshot_models()
-    expected = {model.__tablename__ for model in models}
-    tables = payload["tables"]
-    missing = sorted(expected - set(tables))
-    warnings = []
-    if payload["schema"] == "navia_backup_v2" and missing:
-        raise HTTPException(status_code=422, detail="El respaldo completo omite tablas: " + ", ".join(missing))
-    unknown = set(tables) - expected
-    if unknown:
-        raise HTTPException(status_code=422, detail="El respaldo requiere tablas no soportadas por esta versión: " + ", ".join(sorted(unknown)))
-    if mode == "replace" and "navia_usuarios" not in tables:
-        raise HTTPException(status_code=422, detail="El respaldo no incluye los usuarios necesarios para restaurar una copia")
-    missing_iot = [model.__tablename__ for model in IOT_BACKUP_MODELS if model.__tablename__ in missing]
-    if missing_iot:
-        warnings.append("Este respaldo no incluye todas las tablas IoT: " + ", ".join(missing_iot) + ". Los datos ausentes no pueden recuperarse de este archivo.")
-    missing_other = set(missing) - set(missing_iot)
-    if missing_other:
-        warnings.append(f"Este respaldo anterior omite {len(missing_other)} tablas de la aplicación, incluidas funciones de IA y notificaciones. Esos datos no pueden recuperarse de este archivo.")
-    if mode == "replace" and files is None:
-        warnings.append("Este JSON no incluye archivos adjuntos, imágenes ni comprobantes. Exporte un respaldo ZIP desde la versión actualizada para incluirlos.")
-    for model in models:
-        rows = tables.get(model.__tablename__, [])
-        if not isinstance(rows, list) or any(not isinstance(item, dict) or not isinstance(item.get("id"), int) or isinstance(item.get("id"), bool) or item["id"] < 1 for item in rows):
-            raise HTTPException(status_code=422, detail=f"La tabla {model.__tablename__} contiene registros inválidos")
-        if len({item["id"] for item in rows}) != len(rows):
-            raise HTTPException(status_code=422, detail=f"La tabla {model.__tablename__} contiene IDs duplicados")
-        columns = {column.name for column in model.__table__.columns}
-        if any(set(item) - columns for item in rows):
-            raise HTTPException(status_code=422, detail=f"La tabla {model.__tablename__} requiere campos no soportados por esta versión")
-
-    imported = 0
-    updated = 0
-    table_counts = {}
-    id_maps = {}
-    try:
-        with FileRestore(files, replace=mode == "replace") as storage:
-            if mode == "replace":
-                # Keep the local bootstrap account and its working credentials.
-                local_admin = db.get(Usuario, current.id)
-                if local_admin is None:
-                    raise HTTPException(403, "No se encontró el superadmin local")
-                protected = {key: getattr(local_admin, key) for key in ("correo", "hash_contrasena", "rol", "activo", "is_superadmin")}
-                if db.get_bind().dialect.name == "postgresql":
-                    quote_table = db.get_bind().dialect.identifier_preparer.quote
-                    names = ", ".join(quote_table(model.__tablename__) for model in sorted(models, key=lambda model: model.__tablename__))
-                    db.execute(text(f"LOCK TABLE {names} IN ACCESS EXCLUSIVE MODE"))
-                for table in reset_data_tables():
-                    db.execute(table.delete())
-                db.query(ReciboConsecutivo).delete(synchronize_session=False)
-                db.query(Usuario).filter(Usuario.id != current.id).delete(synchronize_session=False)
-                db.query(ConfiguracionSistema).delete(synchronize_session=False)
-                db.expire_all()
-            for model in models:
-                rows = tables.get(model.__tablename__, [])
-                table_counts[model.__tablename__] = len(rows)
-                columns = {column.name: column for column in model.__table__.columns}
-                parsed_rows = [{key: parse_backup_value(columns[key], value) for key, value in item.items()} for item in rows]
-                for existing, values in reconcile_backup_rows(db, model, parsed_rows, id_maps):
-                    if mode == "replace" and model is Usuario and existing is not None and existing.id == current.id:
-                        values.update(protected)
-                    if existing is not None:
-                        for key, value in values.items():
-                            setattr(existing, key, value)
-                        updated += 1
-                    else:
-                        db.add(model(**values))
-                        imported += 1
-                db.flush()
-            from modules.mod_caficultura.sequence_repair import repair_sequences
-            repair_sequences(db, models)
-            if mode == "replace":
-                set_config(db, "caficultura_catalogs_cleared", "true", "Restauración de copia: conservar los catálogos del respaldo sin recrear datos iniciales")
-            db.flush()
-            storage.apply()
-            db.commit()
-            storage.committed = True
-    except HTTPException:
-        db.rollback()
-        raise
-    except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(status_code=409, detail=f"El respaldo genera conflictos con datos existentes: {exc.orig}")
-    except Exception as exc:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"No se pudo importar el respaldo: {exc}")
-    return {"ok": True, "mode": mode, "importados": imported, "actualizados": updated, "tablas": table_counts, "advertencias": warnings, "archivos": len(files or {})}
+        raise HTTPException(413, f'El respaldo no debe superar {MAX_REQUEST_MB} MB')
+    return restore_bytes(db, resolve_backup_spec('mod_caficultura'), raw, mode=mode, current=current)
 
 
 @router.post("/respaldos/borrado-completo")
@@ -3074,14 +2900,12 @@ def borrado_completo_app(current: Usuario = Depends(get_current_user), db: Sessi
             deleted[table.name] = int(count or 0)
         set_config(db, "caficultura_catalogs_cleared", "true", "Catálogos limpiados explícitamente; no recrear datos iniciales")
 
-        db.query(SesionUsuario).filter(SesionUsuario.usuario_id != current.id).delete(synchronize_session=False)
-        db.query(Usuario).filter(func.lower(Usuario.correo) != ADMIN_EMAIL).delete(synchronize_session=False)
         db.commit()
     except Exception as exc:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"No se pudo limpiar la aplicación: {exc}")
+        raise HTTPException(status_code=500, detail=f"No se pudo limpiar Caficultura: {exc}")
 
-    return {"ok": True, "message": "Aplicación limpiada. Se conservó el superadmin de bootstrap y la configuración base.", "deleted": deleted}
+    return {"ok": True, "message": "Datos de Caficultura limpiados. Se conservaron las cuentas, la configuración general y los demás módulos.", "deleted": deleted}
 
 @router.get("/dashboard", response_model=DashboardOut)
 @router.get("/overview", response_model=DashboardOut)

@@ -284,7 +284,7 @@ def test_email(
     send_notification_email(
         recipient=current.correo,
         recipient_name=current.nombre,
-        subject="NAVIA · Prueba del motor de notificaciones",
+        subject="ruralIA · Prueba del motor de notificaciones",
         summary=(
             "El canal de correo está operativo. Esta prueba no ejecutó el análisis de base de datos "
             "ni generó una alerta productiva."

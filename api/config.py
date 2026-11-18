@@ -21,7 +21,9 @@ def _get_csv(name: str, default: str = "") -> list[str]:
 
 APP_ENV = os.getenv("APP_ENV", "local").strip().lower()
 IS_PRODUCTION = APP_ENV in {"prod", "production"}
-APP_NAME = os.getenv("APP_NAME", "NAVIA").strip() or "NAVIA"
+APP_NAME = os.getenv("APP_NAME", "ruralIA").strip() or "ruralIA"
+if APP_NAME.casefold() == "navia":
+    APP_NAME = "ruralIA"
 APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = _get_int("APP_PORT", 8000)
 APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://localhost:{APP_PORT}").rstrip("/")
@@ -53,7 +55,7 @@ EXPOSE_AUTH_TOKEN = _get_bool("EXPOSE_AUTH_TOKEN", "false" if IS_PRODUCTION else
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@navia.com").strip().lower()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "AdminNavia2026!")
-ADMIN_NAME = os.getenv("ADMIN_NAME", "Administrador NAVIA").strip() or "Administrador NAVIA"
+ADMIN_NAME = os.getenv("ADMIN_NAME", "Administrador ruralIA").strip() or "Administrador ruralIA"
 ADMIN_PASSWORD_SYNC_ON_STARTUP = _get_bool("ADMIN_PASSWORD_SYNC_ON_STARTUP", "false")
 SEED_DEMO_DATA = _get_bool("SEED_DEMO_DATA", "false" if IS_PRODUCTION else "true")
 

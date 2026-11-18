@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Descubrimiento de runtimes modulares incluidos en el despliegue.
 
 El catálogo persistente vive en ``core_app_modules``. Este registro descubre por
@@ -12,6 +10,8 @@ convención únicamente código que ya forma parte del artefacto desplegado:
 Importar un ZIP desde CMS registra el manifiesto, pero nunca ejecuta código del
 ZIP. Para poder activarse, el runtime revisado debe existir en este despliegue.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from importlib import import_module
@@ -27,6 +27,7 @@ class ModuleRuntimeSpec:
     manifest: dict[str, Any]
     lifecycle_module: str
     router_entrypoints: tuple[str, ...] = ()
+    backup_entrypoint: str | None = None
     worker_entrypoint: str | None = None
     legacy_detector_entrypoint: str | None = None
 
@@ -64,6 +65,7 @@ def _discover_runtime_modules() -> dict[str, ModuleRuntimeSpec]:
             lifecycle_module=f"{package}.lifecycle",
             router_entrypoints=routers,
             worker_entrypoint=str(worker) if worker else None,
+            backup_entrypoint=getattr(runtime_module, "BACKUP_ENTRYPOINT", None),
             legacy_detector_entrypoint=str(legacy_detector) if legacy_detector else None,
         )
 

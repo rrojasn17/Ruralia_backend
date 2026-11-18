@@ -303,3 +303,4 @@ class IoTNodeStatusOut(BaseModel):
     latest_source: str | None = None
     latest_values: dict[str, float | int] = Field(default_factory=dict)
     latest_source_keys: list[str] = Field(default_factory=list)
+    last_ingest: dict[str, Any] | None = None

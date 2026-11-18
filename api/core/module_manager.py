@@ -9,12 +9,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from core.models import AppModule, Usuario
+from core.models import AppModule, ConfiguracionSistema, ModuleUserRole, Usuario
 from core.module_contract import MODULE_KEY_RE, validate_module_contract
 from database import get_db
 from modules.registry import builtin_manifests, get_runtime_spec, legacy_runtime_detected, runtime_manifests
@@ -106,6 +106,21 @@ def sync_builtin_modules(db: Session) -> None:
         # del runtime actualmente desplegado.
 
     db.commit()
+    # Migración de privilegios legados: sólo al módulo que estaba activo al
+    # actualizar. No se concede automáticamente acceso a otros módulos.
+    flag = db.query(ConfiguracionSistema).filter(ConfiguracionSistema.clave == 'module_roles_v1_backfill').first()
+    if not flag:
+        active = db.query(AppModule).filter(AppModule.module_type == 'industry', AppModule.status == 'active').first()
+        if active:
+            existing = {r.usuario_id for r in db.query(ModuleUserRole.usuario_id).filter(ModuleUserRole.module_key == active.key)}
+            for user in db.query(Usuario).filter(Usuario.is_superadmin.is_(False)).all():
+                if user.id not in existing:
+                    role = {'administrador': 'admin'}.get((user.rol or '').lower(), (user.rol or 'trabajador').lower())
+                    valid = {r.get('key') for r in (active.manifest or {}).get('roles', [])}
+                    if role in valid:
+                        db.add(ModuleUserRole(usuario_id=user.id, module_key=active.key, role=role))
+            db.add(ConfiguracionSistema(clave='module_roles_v1_backfill', valor=active.key))
+            db.commit()
 
 
 def get_active_industry_module(db: Session) -> AppModule | None:
@@ -117,18 +132,44 @@ def get_active_industry_module(db: Session) -> AppModule | None:
     )
 
 
-def effective_permissions(db: Session, user: Usuario) -> list[str]:
-    if bool(getattr(user, "is_superadmin", False)):
-        return ["*"]
+def role_for_module(db: Session, user: Usuario, module_key: str | None) -> str | None:
+    """Roles por módulo; modo compatible para identidades antiguas sin asignación."""
+    if not module_key:
+        return None
+    membership = db.query(ModuleUserRole).filter(
+        ModuleUserRole.usuario_id == user.id, ModuleUserRole.module_key == module_key
+    ).first()
+    if membership:
+        return membership.role
+    # Una vez asignado a cualquier industria, no puede heredar el rol global
+    # al cambiar a otra. Legado: usuarios anteriores a la migración.
+    exists = db.query(ModuleUserRole.id).filter(ModuleUserRole.usuario_id == user.id).first()
+    migrated = db.query(ConfiguracionSistema.id).filter(ConfiguracionSistema.clave=='module_roles_v1_backfill').first()
+    return None if exists or migrated else str(user.rol or 'operario').lower()
 
-    permissions = set(str(p) for p in (getattr(user, "permisos", None) or []) if str(p).strip())
-    active = get_active_industry_module(db)
-    if active:
-        manifest = active.manifest or {}
-        role_map = manifest.get("role_permissions") or {}
-        for permission in role_map.get((user.rol or "operario").lower(), []):
-            permissions.add(str(permission))
-    return sorted(permissions)
+
+def module_permissions(db: Session, user: Usuario, module: AppModule | None) -> list[str]:
+    if user.is_superadmin:
+        return ['*']
+    if not module:
+        return []
+    manifest = module.manifest or {}
+    role = role_for_module(db, user, module.key)
+    if not role:
+        return []
+    role = {'administrador': 'admin'}.get(role, role)
+    role_map = manifest.get('role_permissions') or {}
+    grants = set(role_map.get(role, []))
+    if role == 'superadmin':
+        grants.update(p for p in manifest.get('permissions', []) if p not in {'floresvolcan:records:delete'})
+    if not manifest.get('enforce_role_permissions'):
+        # Permisos heredados solamente cuando no hay techo de rol.
+        grants.update(str(p) for p in (user.permisos or []) if p != '*')
+    return sorted(grants)
+
+
+def effective_permissions(db: Session, user: Usuario) -> list[str]:
+    return module_permissions(db, user, get_active_industry_module(db))
 
 
 def require_active_module(module_key: str):
@@ -156,9 +197,17 @@ def require_module_permission(permission: str):
     from core.routers.auth import get_current_user
 
     def dep(
+        request: Request,
         current: Usuario = Depends(get_current_user),
         db: Session = Depends(get_db),
     ) -> Usuario:
+        if not current.is_superadmin:
+            active = get_active_industry_module(db)
+            manifest = (active.manifest or {}) if active else {}
+            methods = manifest.get("superadmin_only_methods") or []
+            endings = manifest.get("superadmin_only_endings") or []
+            if request.method in methods or any(request.url.path.endswith(value) for value in endings):
+                raise HTTPException(403, "Solo el superusuario puede borrar o anular registros")
         permissions = set(effective_permissions(db, current))
         if "*" in permissions or permission in permissions:
             return current

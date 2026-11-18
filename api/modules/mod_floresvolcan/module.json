@@ -1,27 +1,27 @@
 {
   "key": "mod_floresvolcan",
   "name": "FloresVolcan",
-  "version": "0.5.1",
+  "version": "0.11.0",
   "module_type": "industry",
-  "description": "ERP florícola configurable. Lirios con SAP normalizado por variedad/calibre, compras en unidad comercial, recepción a inventario físico, flujo compatible con Excel, respaldos y analítica gerencial.",
+  "description": "ERP florícola con trazabilidad por siembra, conciliación, histórico Excel verificable y asistente guiado.",
   "icon": "i-lucide-flower-2",
   "home_path": "/floresvolcan",
   "roles": [
     {
-      "key": "admin",
-      "label": "Administrador"
+      "key": "superadmin",
+      "label": "Superadmin del módulo"
     },
     {
       "key": "gerente",
       "label": "Gerente"
     },
     {
-      "key": "operario",
-      "label": "Operación / Operario"
+      "key": "admin",
+      "label": "Administrador"
     },
     {
       "key": "trabajador",
-      "label": "Trabajador de campo"
+      "label": "Trabajador"
     }
   ],
   "permissions": [
@@ -57,10 +57,13 @@
     "floresvolcan:config:view",
     "floresvolcan:config:manage",
     "floresvolcan:exports:use",
-    "floresvolcan:backup:manage"
+    "floresvolcan:backup:manage",
+    "floresvolcan:records:delete",
+    "floresvolcan:paper:review",
+    "floresvolcan:users:manage"
   ],
   "role_permissions": {
-    "admin": [
+    "gerente": [
       "floresvolcan:dashboard:view",
       "floresvolcan:suppliers:view",
       "floresvolcan:suppliers:manage",
@@ -87,22 +90,23 @@
       "floresvolcan:requisitions:approve",
       "floresvolcan:harvest:register",
       "floresvolcan:technical_close:execute",
+      "floresvolcan:field:use",
       "floresvolcan:ai:use",
       "floresvolcan:lilies:view",
       "floresvolcan:config:view",
       "floresvolcan:config:manage",
       "floresvolcan:exports:use",
-      "floresvolcan:backup:manage"
+      "floresvolcan:backup:manage",
+      "floresvolcan:paper:review",
+      "floresvolcan:users:manage"
     ],
-    "gerente": [
+    "admin": [
       "floresvolcan:dashboard:view",
       "floresvolcan:suppliers:view",
       "floresvolcan:suppliers:manage",
-      "floresvolcan:sap:view",
       "floresvolcan:purchases:view",
       "floresvolcan:purchases:create",
       "floresvolcan:purchases:update",
-      "floresvolcan:purchases:approve",
       "floresvolcan:inventory:view",
       "floresvolcan:inventory:receive",
       "floresvolcan:inventory:manage",
@@ -120,19 +124,12 @@
       "floresvolcan:requisitions:approve",
       "floresvolcan:harvest:register",
       "floresvolcan:technical_close:execute",
+      "floresvolcan:field:use",
       "floresvolcan:ai:use",
       "floresvolcan:lilies:view",
-      "floresvolcan:config:view",
-      "floresvolcan:config:manage",
       "floresvolcan:exports:use",
-      "floresvolcan:backup:manage"
-    ],
-    "operario": [
-      "floresvolcan:dashboard:view",
-      "floresvolcan:purchases:view",
-      "floresvolcan:purchases:create",
-      "floresvolcan:purchases:update",
-      "floresvolcan:lilies:view"
+      "floresvolcan:paper:review",
+      "floresvolcan:users:manage"
     ],
     "trabajador": [
       "floresvolcan:field:use",
@@ -143,87 +140,125 @@
   },
   "navigation": [
     {
-      "group": "FloresVolcan",
-      "label": "Panel gerencial",
+      "group": "",
+      "label": "Inicio",
       "to": "/floresvolcan",
       "icon": "i-lucide-layout-dashboard",
       "permission": "floresvolcan:dashboard:view"
     },
     {
-      "group": "Lirios",
-      "label": "Centro Lirios",
-      "to": "/floresvolcan/lirios",
-      "icon": "i-lucide-flower-2",
-      "permission": "floresvolcan:lilies:view"
-    },
-    {
-      "group": "Lirios",
-      "label": "Entradas / inventario",
-      "to": "/floresvolcan/inventario",
-      "icon": "i-lucide-snowflake",
-      "permission": "floresvolcan:inventory:view"
-    },
-    {
-      "group": "Lirios",
-      "label": "Siembra y requisiciones",
-      "to": "/floresvolcan/produccion",
-      "icon": "i-lucide-sprout",
-      "permission": "floresvolcan:planting:view"
-    },
-    {
-      "group": "Lirios",
-      "label": "App de campo",
-      "to": "/floresvolcan/campo",
-      "icon": "i-lucide-smartphone",
-      "permission": "floresvolcan:field:use"
-    },
-    {
-      "group": "Compras",
-      "label": "Órdenes de compra",
+      "group": "Operaciones",
+      "label": "Compras",
       "to": "/floresvolcan/compras",
       "icon": "i-lucide-shopping-cart",
       "permission": "floresvolcan:purchases:view"
     },
     {
-      "group": "Compras",
+      "group": "Operaciones",
+      "label": "Entradas",
+      "to": "/floresvolcan/inventario",
+      "icon": "i-lucide-container",
+      "permission": "floresvolcan:inventory:view"
+    },
+    {
+      "group": "Operaciones",
+      "label": "Salidas de bulbo",
+      "to": "/floresvolcan/salidas-bulbo",
+      "icon": "i-lucide-package-open",
+      "permission": "floresvolcan:requisitions:view"
+    },
+    {
+      "group": "Operaciones",
+      "label": "Siembra",
+      "to": "/floresvolcan/produccion",
+      "icon": "i-lucide-sprout",
+      "permission": "floresvolcan:planting:view"
+    },
+    {
+      "group": "Operaciones",
+      "label": "Cosecha",
+      "to": "/floresvolcan/cosechas",
+      "icon": "i-lucide-calendar-check",
+      "permission": "floresvolcan:planting:view"
+    },
+    {
+      "group": "Diario",
+      "label": "Lirios",
+      "to": "/floresvolcan/lirios",
+      "icon": "i-lucide-flower-2",
+      "permission": "floresvolcan:lilies:view"
+    },
+    {
+      "group": "Diario",
+      "label": "Revisar hojas",
+      "to": "/floresvolcan/revisiones",
+      "icon": "i-lucide-clipboard-check",
+      "permission": "floresvolcan:paper:review"
+    },
+    {
+      "group": "Diario",
+      "label": "Mi trabajo",
+      "to": "/floresvolcan/campo",
+      "icon": "i-lucide-smartphone",
+      "permission": "floresvolcan:field:use"
+    },
+    {
+      "group": "Empresa",
+      "label": "Materiales (SAP)",
+      "to": "/floresvolcan/sap",
+      "icon": "i-lucide-barcode",
+      "permission": "floresvolcan:sap:view"
+    },
+    {
+      "group": "Empresa",
       "label": "Proveedores",
       "to": "/floresvolcan/proveedores",
       "icon": "i-lucide-building-2",
       "permission": "floresvolcan:suppliers:view"
     },
     {
-      "group": "Operación",
-      "label": "Espacios productivos",
+      "group": "Empresa",
+      "label": "Mesas y espacios",
       "to": "/floresvolcan/espacios",
       "icon": "i-lucide-map-pinned",
       "permission": "floresvolcan:spaces:view"
     },
     {
-      "group": "Operación",
+      "group": "Empresa",
       "label": "Trabajadores",
       "to": "/floresvolcan/trabajadores",
       "icon": "i-lucide-users",
       "permission": "floresvolcan:workers:view"
     },
     {
-      "group": "Configuración",
-      "label": "Catálogo SAP",
-      "to": "/floresvolcan/sap",
-      "icon": "i-lucide-barcode",
-      "permission": "floresvolcan:sap:view"
-    },
-    {
-      "group": "Configuración",
-      "label": "Lirios y respaldos",
+      "group": "Empresa",
+      "label": "Ajustes",
       "to": "/floresvolcan/configuracion",
       "icon": "i-lucide-settings-2",
       "permission": "floresvolcan:config:view"
+    },
+    {
+      "group": "Empresa",
+      "label": "Usuarios y roles",
+      "to": "/admin",
+      "icon": "i-lucide-users-round",
+      "permission": "floresvolcan:users:manage"
     }
   ],
   "route_prefixes": [
     "/floresvolcan"
   ],
-  "public_route_prefixes": [],
+  "public_route_prefixes": [
+    "/floresvolcan/registro",
+    "/floresvolcan/trazabilidad"
+  ],
   "module_api_version": 1,
-  "minimum_core_api_version": 1
+  "minimum_core_api_version": 1,
+  "enforce_role_permissions": true,
+  "superadmin_only_methods": [
+    "DELETE"
+  ],
+  "superadmin_only_endings": [
+    "/void"
+  ]
 }

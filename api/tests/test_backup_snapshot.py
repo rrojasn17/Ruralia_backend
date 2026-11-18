@@ -4,22 +4,26 @@ import asyncio
 import hashlib
 import json
 from decimal import Decimal
+from datetime import date
 from io import BytesIO
 from zipfile import ZipFile, ZIP_DEFLATED
 
 import pytest
 from fastapi import HTTPException, UploadFile
 
-from test_iot_backup import databases, seed_backup, restore
+from test_iot_backup import seed_backup, restore
 from config import ADMIN_EMAIL
-from core.models import Usuario
+from core.models import ModuleUserRole, Usuario
 from modules.mod_caficultura import backup_archive
-from modules.mod_caficultura.model_ai_consulting import AIAgent, AIConversation, AIMessage
+from modules.mod_caficultura.model_ai_consulting import AIAgent, AIConversation, AIMessage, AIAttachment
 from modules.mod_caficultura.model_ai_knowledge import AIKnowledgeDocument, AIKnowledgeChunk
 from modules.mod_caficultura.model_notifications import NotificationPreference
-from modules.mod_caficultura.models import Cliente
+from modules.mod_caficultura.models import Cliente, ReciboCafe
 from modules.mod_caficultura.model_iot import IoTIntegration, IoTReading, IoTDashboardPreset
 from modules.mod_caficultura.router import exportar_respaldo, importar_respaldo, serialize_backup_value
+from modules.mod_floresvolcan.models import BusinessStatus
+
+pytest_plugins = ['test_iot_backup']
 
 
 def roots_at(path):
@@ -47,24 +51,30 @@ def test_complete_archive_replaces_data_files_and_preserves_local_access(databas
     source.add_all([
         AIConversation(id=1, usuario_id=1, agent_id=1, finca_id=1),
         NotificationPreference(usuario_id=1, email_enabled=False),
-        AIKnowledgeDocument(id=1, agent_id=1, title='Guide', original_name='guide.txt', storage_key='guide.txt', media_type='text/plain', size_bytes=5, sha256=hashlib.sha256(b'guide').hexdigest()),
+        AIKnowledgeDocument(id=1, agent_id=1, title='Guide', original_name='guide.txt', storage_key='1/guide.txt', media_type='text/plain', size_bytes=5, sha256=hashlib.sha256(b'guide').hexdigest()),
     ])
     source.flush()
     source.add_all([
         AIMessage(conversation_id=1, role='user', content='Test question'),
         AIKnowledgeChunk(document_id=1, position=0, content='guide'),
+        AIAttachment(usuario_id=1, storage_key='1/photo.png', original_name='photo.png', media_type='image/png', size_bytes=5, sha256=hashlib.sha256(b'photo').hexdigest()),
+        ReciboCafe(numero_recibo='BACKUP-RECEIPT', fecha=date(2026, 11, 16), productor_nombre='Test', finca_id=1, liquidacion_comprobante_storage_key='1/proof.pdf'),
     ])
     source.commit()
     source_roots = roots_at(tmp_path / 'source')
     for root in source_roots.values():
         root.mkdir(parents=True, exist_ok=True)
-    (source_roots['uploads'] / 'logo.png').write_bytes(b'logo')
-    (source_roots['ai_uploads'] / 'guide.txt').write_bytes(b'guide')
-    (source_roots['receipt_uploads'] / 'proof.pdf').write_bytes(b'proof')
+    (source_roots['uploads'] / 'branding').mkdir()
+    (source_roots['uploads'] / 'branding/logo.png').write_bytes(b'core-logo')
+    (source_roots['ai_uploads'] / '1').mkdir()
+    (source_roots['receipt_uploads'] / '1').mkdir()
+    (source_roots['ai_uploads'] / '1/guide.txt').write_bytes(b'guide')
+    (source_roots['ai_uploads'] / '1/photo.png').write_bytes(b'photo')
+    (source_roots['receipt_uploads'] / '1/proof.pdf').write_bytes(b'proof')
     monkeypatch.setattr(backup_archive, 'upload_roots', lambda: source_roots)
     exported = exportar_respaldo(current=source.get(Usuario, 1), db=source, format='zip').body
     with ZipFile(BytesIO(exported)) as archive:
-        assert set(archive.namelist()) == {'backup.json', 'uploads/logo.png', 'ai_uploads/guide.txt', 'receipt_uploads/proof.pdf'}
+        assert set(archive.namelist()) == {'backup.json', 'ai_uploads/1/guide.txt', 'ai_uploads/1/photo.png', 'receipt_uploads/1/proof.pdf'}
     restore(target, json.loads(exportar_respaldo(current=source.get(Usuario, 1), db=source).body))
     admin = local_admin(target)
     target.add_all([
@@ -78,7 +88,7 @@ def test_complete_archive_replaces_data_files_and_preserves_local_access(databas
     monkeypatch.setattr(backup_archive, 'upload_roots', lambda: destination_roots)
     result = import_bytes(target, exported, admin)
     target.expire_all()
-    assert result['mode'] == 'replace' and result['advertencias'] == [] and result['archivos'] == 3
+    assert result['mode'] == 'replace' and result['archivos'] == 3
     assert target.query(Cliente).count() == 1
     assert target.query(IoTIntegration).count() == 1
     assert target.query(IoTReading).count() == 1
@@ -88,10 +98,10 @@ def test_complete_archive_replaces_data_files_and_preserves_local_access(databas
     assert target.get(Usuario, admin.id).hash_contrasena == 'local-access-hash'
     assert target.get(Usuario, admin.id).is_superadmin is True
     assert target.query(IoTDashboardPreset).one().usuario_id != admin.id
-    assert not (destination_roots['uploads'] / 'old.txt').exists()
-    assert (destination_roots['uploads'] / 'logo.png').read_bytes() == b'logo'
-    assert (destination_roots['ai_uploads'] / 'guide.txt').read_bytes() == b'guide'
-    assert (destination_roots['receipt_uploads'] / 'proof.pdf').read_bytes() == b'proof'
+    assert (destination_roots['uploads'] / 'old.txt').read_bytes() == b'old'
+    assert not (destination_roots['uploads'] / 'branding/logo.png').exists()
+    assert (destination_roots['ai_uploads'] / '1/guide.txt').read_bytes() == b'guide'
+    assert (destination_roots['receipt_uploads'] / '1/proof.pdf').read_bytes() == b'proof'
     import_bytes(target, exported, admin)
     assert target.query(IoTReading).count() == 1
 
@@ -110,6 +120,34 @@ def test_replace_failure_rolls_back_deleted_records(databases):
     assert target.query(Cliente).filter_by(codigo='KEEP').one()
     assert target.query(IoTReading).count() == 1
     assert target.get(Usuario, admin.id).hash_contrasena == 'local-access-hash'
+
+
+def test_replace_preserves_users_and_history_owned_by_other_modules(databases):
+    source, target = databases
+    payload = seed_backup(source)
+    seed_backup(target)
+    admin = local_admin(target)
+    colleague = Usuario(nombre='Flores', correo='flores@example.test', hash_contrasena='flores-access', rol='trabajador')
+    role_user = Usuario(nombre='Assigned', correo='assigned@example.test', hash_contrasena='assigned-access', rol='trabajador')
+    removable = Usuario(nombre='Unused', correo='unused@example.test', hash_contrasena='unused', rol='trabajador')
+    target.add_all([colleague, role_user, removable])
+    target.flush()
+    colleague_id, role_user_id = colleague.id, role_user.id
+    target.add(BusinessStatus(user_id=colleague.id, scope_hash='outside-backup', message='Keep Flores history'))
+    target.add(ModuleUserRole(usuario_id=role_user.id, module_key='mod_floresvolcan', role='trabajador'))
+    target.commit()
+
+    result = import_bytes(target, json.dumps(payload).encode(), admin)
+    target.expire_all()
+    assert result['ok'] is True
+    assert target.get(Usuario, colleague_id).hash_contrasena == 'flores-access'
+    assert target.get(Usuario, role_user_id).hash_contrasena == 'assigned-access'
+    assert target.query(BusinessStatus).one().message == 'Keep Flores history'
+    assert target.query(BusinessStatus).one().user_id == colleague_id
+    assert target.query(ModuleUserRole).one().usuario_id == role_user_id
+    assert target.query(Usuario).filter_by(correo='unused@example.test').one().hash_contrasena == 'unused'
+    assert target.get(Usuario, admin.id).hash_contrasena == 'local-access-hash'
+    assert target.query(IoTReading).count() == 1
 
 
 def test_replace_is_restricted_and_complete_schema_cannot_omit_tables(databases):

@@ -1,4 +1,4 @@
-# NAVIA Backend estable
+# ruralIA Backend estable
 
 Backend FastAPI + PostgreSQL para digitalizar recibos de café, órdenes de trabajo, trazabilidad y sincronización offline.
 

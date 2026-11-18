@@ -94,6 +94,7 @@ class IoTNode(Base):
         Boolean, nullable=False, default=True, server_default="true", index=True
     )
     variables_config = Column(JSON, nullable=False, default=dict)
+    ingest_diagnostics = Column(JSON, nullable=True)
     ingest_token_hash = Column(String(64), nullable=True)
     last_seen_at = Column(DateTime(timezone=True), nullable=True, index=True)
     created_by_id = Column(

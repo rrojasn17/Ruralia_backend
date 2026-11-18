@@ -18,3 +18,5 @@ ROUTER_ENTRYPOINTS = (
 WORKER_ENTRYPOINT = "modules.mod_caficultura.worker:run_cycle"
 
 LEGACY_DETECTOR_ENTRYPOINT = "modules.mod_caficultura.lifecycle:legacy_schema_exists"
+
+BACKUP_ENTRYPOINT = "modules.mod_caficultura.backup_provider:backup_spec"

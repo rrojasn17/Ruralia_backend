@@ -4,7 +4,7 @@ from database import SessionLocal, engine
 
 # Impide ejecutar estos tests contra la base real incluso con configuración errónea.
 assert engine.url.get_backend_name() == 'sqlite'
-assert str(engine.url.database).startswith('/tmp/navia-ai-tests-')
+assert str(engine.url.database).startswith('/tmp/ruralia-ai-tests-')
 from main import app
 from modules.mod_caficultura.models import Cliente, Finca, ActividadFinca, InsumoFinca, CompraInsumoFactura
 

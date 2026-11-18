@@ -1,5 +1,5 @@
 x-app-image: &app-image
-  image: navia-api:${APP_IMAGE_TAG:-1.4.0}
+  image: ruralia-api:${APP_IMAGE_TAG:-1.4.0}
   build:
     context: ./api
 

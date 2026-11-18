@@ -87,3 +87,6 @@ id_ed25519
 
 # Local secrets
 secrets/
+
+# Private local database snapshots
+/.local-backups/

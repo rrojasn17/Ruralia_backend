@@ -185,6 +185,7 @@ def upgrade_schema(db: Session) -> None:
         "CREATE INDEX IF NOT EXISTS ix_navia_ai_pending_expiry ON navia_ai_pending_actions (status, expires_at)",
         "CREATE INDEX IF NOT EXISTS ix_navia_ai_conversation_finca ON navia_ai_conversations (finca_id)",
         "ALTER TABLE navia_iot_nodes ADD COLUMN IF NOT EXISTS integration_id INTEGER",
+        "ALTER TABLE navia_iot_nodes ADD COLUMN IF NOT EXISTS ingest_diagnostics JSON",
         """
         DO $$
         BEGIN

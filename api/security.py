@@ -6,7 +6,7 @@ import secrets
 from passlib.context import CryptContext
 
 _contexto_pwd = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
-_DUMMY_PASSWORD_HASH = _contexto_pwd.hash("NAVIA-dummy-password-never-used-2026!")
+_DUMMY_PASSWORD_HASH = _contexto_pwd.hash("ruralIA-dummy-password-never-used-2026!")
 
 
 def generar_token(bytes_length: int = 48) -> str:

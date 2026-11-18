@@ -158,7 +158,7 @@ def resolve_map_location(value: str) -> ResolvedMapLocation:
         with httpx.Client(
             timeout=timeout,
             follow_redirects=False,
-            headers={"User-Agent": "NAVIA/1.0 map-location-resolver"},
+            headers={"User-Agent": "ruralIA/1.0 map-location-resolver"},
         ) as client:
             for _ in range(_MAX_REDIRECTS + 1):
                 coordinates = extract_map_coordinates(current_url)

@@ -130,7 +130,7 @@ class TrainingCompleteIn(BaseModel):
 
 class ConfiguracionOut(BaseModel):
     session_days: int = 30
-    app_name: str = "NAVIA"
+    app_name: str = "ruralIA"
     app_logo_url: Optional[str] = None
     alert_whatsapp: Optional[str] = None
     alert_email: Optional[str] = None
@@ -157,7 +157,7 @@ class ConfiguracionUpdate(BaseModel):
 
 
 class BrandingOut(BaseModel):
-    app_name: str = "NAVIA"
+    app_name: str = "ruralIA"
     app_logo_url: Optional[str] = None
 
 

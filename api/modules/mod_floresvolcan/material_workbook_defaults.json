@@ -1,0 +1,1567 @@
+{
+  "source": "Lirio.xlsx · Siembra",
+  "profiles": [
+    {
+      "variety": "ANGELA ROSELILY",
+      "caliber": "15/17",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "ASOPUS",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "BACH",
+      "caliber": "12/14",
+      "cycles": [
+        11.0,
+        12.0,
+        13.0
+      ],
+      "densities": [
+        54.0,
+        56.0,
+        73.0
+      ],
+      "colors": [
+        "RE",
+        "WH"
+      ]
+    },
+    {
+      "variety": "BACH",
+      "caliber": "13/14",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "BACH",
+      "caliber": "18/20",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "BEAU SOLEIL",
+      "caliber": "12/14",
+      "cycles": [
+        10.0,
+        11.0,
+        13.0
+      ],
+      "densities": [
+        54.0,
+        56.0,
+        73.0
+      ],
+      "colors": [
+        "PK",
+        "YL"
+      ]
+    },
+    {
+      "variety": "BELVEDERE",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        56.0,
+        73.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "BELVEDERE",
+      "caliber": "14/16",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "CANDY CLUB",
+      "caliber": "14/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        44.0,
+        54.0,
+        56.0,
+        64.0,
+        80.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "CANDY CLUB",
+      "caliber": "15/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        80.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "CANDY CLUB",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        48.0,
+        56.0,
+        64.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "CERVIA",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "CEVENNES",
+      "caliber": "12/14",
+      "cycles": [
+        11.0,
+        13.0
+      ],
+      "densities": [
+        54.0,
+        56.0,
+        73.0
+      ],
+      "colors": [
+        "YL"
+      ]
+    },
+    {
+      "variety": "CEVENNES",
+      "caliber": "16/18",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "YL"
+      ]
+    },
+    {
+      "variety": "COMPETITION",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0,
+        64.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "CORFINIO",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "CORTONA",
+      "caliber": "12/14",
+      "cycles": [
+        10.0,
+        11.0,
+        12.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "OR"
+      ]
+    },
+    {
+      "variety": "CORVETTE",
+      "caliber": "14/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0,
+        80.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "CORVETTE",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        44.0,
+        56.0,
+        80.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "COUPLET ZANLACOUP",
+      "caliber": "12/14",
+      "cycles": [
+        11.0,
+        13.0
+      ],
+      "densities": [
+        56.0,
+        73.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "DALIAN",
+      "caliber": "14/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "DALIAN",
+      "caliber": "15/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        54.0,
+        56.0,
+        80.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "DALIAN",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0,
+        80.0
+      ],
+      "colors": [
+        "PK",
+        "WH"
+      ]
+    },
+    {
+      "variety": "DAM SQUARE",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "DIAMANTE",
+      "caliber": "14/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "DIAMANTE",
+      "caliber": "16/18",
+      "cycles": [
+        13.0,
+        14.0
+      ],
+      "densities": [
+        48.0,
+        54.0,
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "DUTCH PASSION",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        56.0,
+        73.0
+      ],
+      "colors": [
+        "OR"
+      ]
+    },
+    {
+      "variety": "DYNAMIX",
+      "caliber": "12/14",
+      "cycles": [
+        11.0,
+        13.0
+      ],
+      "densities": [
+        54.0,
+        56.0,
+        73.0
+      ],
+      "colors": [
+        "RE"
+      ]
+    },
+    {
+      "variety": "EREMO",
+      "caliber": "12/14",
+      "cycles": [
+        11.0,
+        13.0
+      ],
+      "densities": [
+        54.0,
+        56.0,
+        73.0
+      ],
+      "colors": [
+        "OR"
+      ]
+    },
+    {
+      "variety": "EREMO DN",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        48.0,
+        73.0
+      ],
+      "colors": [
+        "OR",
+        "PK"
+      ]
+    },
+    {
+      "variety": "EREMO DN",
+      "caliber": "16/18",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        48.0
+      ],
+      "colors": [
+        "OR"
+      ]
+    },
+    {
+      "variety": "ERINOME",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "EYELINER",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "FALKLAND",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "FOREVER",
+      "caliber": "18/20",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "FRONTERA",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "GOLDEN PASS",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        54.0,
+        73.0
+      ],
+      "colors": [
+        "YL"
+      ]
+    },
+    {
+      "variety": "GOLDEN PASS",
+      "caliber": "14/16",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        54.0,
+        73.0
+      ],
+      "colors": [
+        "YL"
+      ]
+    },
+    {
+      "variety": "GRACEFULL",
+      "caliber": "14/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        48.0,
+        54.0,
+        56.0,
+        80.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "GRACEFULL",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0,
+        80.0
+      ],
+      "colors": [
+        "PK",
+        "WH"
+      ]
+    },
+    {
+      "variety": "GRACIOLI",
+      "caliber": "14/16",
+      "cycles": [
+        14.0,
+        15.0
+      ],
+      "densities": [
+        80.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "HINAULT",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        54.0,
+        56.0,
+        73.0
+      ],
+      "colors": [
+        "YL"
+      ]
+    },
+    {
+      "variety": "ICE DREAMER",
+      "caliber": "15/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "ICE DREAMER",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "IDAHO",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "OR",
+        "YL"
+      ]
+    },
+    {
+      "variety": "INDIAN SUMMERSET",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        54.0,
+        73.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "INDIAN SUMMERSET",
+      "caliber": "16/18",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "INVICTUS JW SELECT",
+      "caliber": "14/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "JOOP",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "KESLA",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "YL"
+      ]
+    },
+    {
+      "variety": "KODAIRA",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "OR"
+      ]
+    },
+    {
+      "variety": "LITOUWEN",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "LITOUWEN",
+      "caliber": "13/14",
+      "cycles": [
+        11.0,
+        13.0
+      ],
+      "densities": [
+        54.0,
+        73.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "LITOUWEN DN",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        48.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "LITOUWEN DN",
+      "caliber": "16/18",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        48.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "LITOUWEN DN",
+      "caliber": "18/20",
+      "cycles": [
+        11.0,
+        13.0
+      ],
+      "densities": [
+        48.0,
+        54.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "MASTER ZANOTMAS",
+      "caliber": "14/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "MASTER ZANOTMAS",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0,
+        64.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "MEGNUM",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        48.0,
+        56.0,
+        80.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "MERCATO",
+      "caliber": "11/12",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "MERCATO",
+      "caliber": "12/14",
+      "cycles": [
+        11.0,
+        13.0
+      ],
+      "densities": [
+        56.0,
+        73.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "MERLINGH",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "MONTENEU",
+      "caliber": "14/16",
+      "cycles": [
+        14.0,
+        15.0
+      ],
+      "densities": [
+        80.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "NASHVILLE",
+      "caliber": "12/14",
+      "cycles": [
+        11.0,
+        13.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "YL"
+      ]
+    },
+    {
+      "variety": "NO ETIQUETADA",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": []
+    },
+    {
+      "variety": "ORFEO",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "RE"
+      ]
+    },
+    {
+      "variety": "POMPIDOU",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "YL"
+      ]
+    },
+    {
+      "variety": "PONTA DELGADA",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        56.0,
+        73.0
+      ],
+      "colors": [
+        "OR",
+        "WH"
+      ]
+    },
+    {
+      "variety": "PRAIANO",
+      "caliber": "18/20",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "PREMIUM BLOND",
+      "caliber": "14/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "PREMIUM BLOND",
+      "caliber": "16/18",
+      "cycles": [
+        13.0,
+        15.0
+      ],
+      "densities": [
+        56.0,
+        80.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "PROFUNDO",
+      "caliber": "15/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "PROFUNDO",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0,
+        80.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "ROBINA",
+      "caliber": "14/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "ROBINA",
+      "caliber": "15/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "ROBINA",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        48.0,
+        54.0,
+        56.0,
+        80.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "ROBINA",
+      "caliber": "18/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "ROBINA",
+      "caliber": "18/20",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0,
+        64.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "ROSELILY ARNOLDO",
+      "caliber": "18/20",
+      "cycles": [
+        16.0
+      ],
+      "densities": [
+        64.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "SCANSANO",
+      "caliber": "12/14",
+      "cycles": [
+        11.0,
+        13.0
+      ],
+      "densities": [
+        56.0,
+        73.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "SENTOSA",
+      "caliber": "11/12",
+      "cycles": [
+        11.0,
+        12.0,
+        13.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "SENTOSA",
+      "caliber": "12/14",
+      "cycles": [
+        11.0,
+        13.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "SEVERN",
+      "caliber": "18/20",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        48.0,
+        54.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "SHIMLA",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        54.0,
+        73.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "SIGNUM",
+      "caliber": "18/20",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        48.0,
+        54.0,
+        56.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "SISTO",
+      "caliber": "14/16",
+      "cycles": [
+        15.0
+      ],
+      "densities": [
+        80.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "STARFIGHTER",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "STARLILY ALFONZO",
+      "caliber": "14/16",
+      "cycles": [
+        16.0
+      ],
+      "densities": [
+        64.0
+      ],
+      "colors": [
+        "YL"
+      ]
+    },
+    {
+      "variety": "STARLILY ALFONZO",
+      "caliber": "16/18",
+      "cycles": [
+        16.0
+      ],
+      "densities": [
+        64.0
+      ],
+      "colors": [
+        "YL"
+      ]
+    },
+    {
+      "variety": "STARLILY ALVARO",
+      "caliber": "16/18",
+      "cycles": [
+        16.0
+      ],
+      "densities": [
+        64.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "STARLILY CRISTIANO",
+      "caliber": "14/16",
+      "cycles": [
+        16.0
+      ],
+      "densities": [
+        64.0
+      ],
+      "colors": [
+        "YL"
+      ]
+    },
+    {
+      "variety": "TABLE DANCE",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        48.0,
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "TOUCHSTONE",
+      "caliber": "14/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        54.0,
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "TOUCHSTONE",
+      "caliber": "14/17",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "TOUCHSTONE",
+      "caliber": "14/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "TOUCHSTONE",
+      "caliber": "14/19",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "TOUCHSTONE",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "TRESOR",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "OR"
+      ]
+    },
+    {
+      "variety": "VENETO",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        48.0,
+        56.0,
+        80.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "VIOLA ROSELILY",
+      "caliber": "15/17",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "VUELTA",
+      "caliber": "12/14",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        56.0,
+        73.0
+      ],
+      "colors": [
+        "RE",
+        "YL"
+      ]
+    },
+    {
+      "variety": "YERSEKE",
+      "caliber": "11/12",
+      "cycles": [
+        11.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "YERSEKE",
+      "caliber": "12/14",
+      "cycles": [
+        11.0,
+        12.0,
+        13.0
+      ],
+      "densities": [
+        54.0,
+        56.0,
+        73.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    },
+    {
+      "variety": "ZAMBESI",
+      "caliber": "14/15",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "ZAMBESI",
+      "caliber": "14/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "ZAMBESI",
+      "caliber": "14/17",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "WK"
+      ]
+    },
+    {
+      "variety": "ZAMBESI",
+      "caliber": "15/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        54.0,
+        56.0,
+        80.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "ZAMBESI",
+      "caliber": "16/18",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        48.0,
+        54.0,
+        56.0,
+        64.0,
+        80.0
+      ],
+      "colors": [
+        "PK",
+        "WH"
+      ]
+    },
+    {
+      "variety": "ZAMBESI",
+      "caliber": "18/16",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        56.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "ZAMBESI",
+      "caliber": "18/20",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        54.0,
+        56.0
+      ],
+      "colors": [
+        "PK",
+        "WH"
+      ]
+    },
+    {
+      "variety": "ZAMBESSI DN",
+      "caliber": "20/22",
+      "cycles": [
+        13.0
+      ],
+      "densities": [
+        26.0,
+        48.0,
+        56.0
+      ],
+      "colors": [
+        "WH"
+      ]
+    },
+    {
+      "variety": "ZANELLA",
+      "caliber": "12/14",
+      "cycles": [
+        11.0,
+        12.0,
+        13.0
+      ],
+      "densities": [
+        73.0
+      ],
+      "colors": [
+        "PK"
+      ]
+    }
+  ]
+}

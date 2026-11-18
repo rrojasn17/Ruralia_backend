@@ -10,6 +10,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from modules.mod_floresvolcan.models import Worker
+from .worker_codes import allocate_worker_code
 
 HEADERS = ["employee_code", "identification", "name", "hire_date", "nationality", "birth_date", "daily_salary", "active"]
 
@@ -20,7 +21,7 @@ def build_worker_template() -> bytes:
     # El machote no incluye una fila ficticia para evitar importarla accidentalmente.
     info = wb.create_sheet("INSTRUCCIONES")
     info.append(["Campo", "Uso"])
-    info.append(["employee_code", "Código único del trabajador. Obligatorio."])
+    info.append(["employee_code", "Código de cuatro dígitos. Dejar vacío genera uno automáticamente."])
     info.append(["identification", "Identificación única. Obligatorio."])
     info.append(["name", "Nombre completo. Obligatorio."])
     info.append(["hire_date", "Fecha de ingreso: YYYY-MM-DD o DD/MM/YYYY. Obligatorio."])
@@ -68,16 +69,18 @@ def import_workers(db: Session, content: bytes) -> dict:
             code = str(cells[idx["employee_code"]] or "").strip()
             identification = str(cells[idx["identification"]] or "").strip()
             name = str(cells[idx["name"]] or "").strip()
-            if not code or not identification or not name: raise ValueError("employee_code, identification y name son obligatorios")
+            if not identification or not name: raise ValueError("identification y name son obligatorios")
             hire_date = _date(cells[idx["hire_date"]], "hire_date")
             if not hire_date: raise ValueError("hire_date es obligatoria")
             birth = _date(cells[idx.get("birth_date", -1)] if "birth_date" in idx else None, "birth_date")
             salary = cells[idx.get("daily_salary", -1)] if "daily_salary" in idx else None
             salary = Decimal(str(salary)) if salary not in (None, "") else None
-            row = db.query(Worker).filter(or_(Worker.employee_code == code, Worker.identification == identification)).first()
+            row = db.query(Worker).filter(Worker.identification == identification).first()
+            code_owner=db.query(Worker).filter(Worker.employee_code==code).first() if code else None
+            if code_owner and code_owner.identification!=identification:raise ValueError("El código pertenece a otro trabajador")
             is_new = row is None
-            row = row or Worker(employee_code=code, identification=identification, name=name, hire_date=hire_date)
-            row.employee_code=code; row.identification=identification; row.name=name; row.hire_date=hire_date
+            row = row or Worker(employee_code=allocate_worker_code(db), legacy_employee_code=code, identification=identification, name=name, hire_date=hire_date)
+            row.identification=identification; row.name=name; row.hire_date=hire_date
             row.nationality=str(cells[idx["nationality"]]).strip() if "nationality" in idx and cells[idx["nationality"]] not in (None, "") else None
             row.birth_date=birth; row.daily_salary=salary
             row.active=_bool(cells[idx["active"]] if "active" in idx else True)

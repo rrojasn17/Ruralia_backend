@@ -1,1 +1,1 @@
-# Router package for NAVIA stable API.
+# Router package for ruralIA stable API.

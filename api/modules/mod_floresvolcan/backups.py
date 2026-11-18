@@ -1,21 +1,17 @@
 from __future__ import annotations
 
 import json
-import mimetypes
 import os
 import secrets
 import urllib.parse
 import urllib.request
-from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from zipfile import ZIP_DEFLATED, ZipFile
 
 from sqlalchemy.orm import Session
 
-from modules.mod_floresvolcan import models
 from modules.mod_floresvolcan.legacy_excel import build_lirio_workbook
 from modules.mod_floresvolcan.models import BackupRun, ModuleSetting
 
@@ -52,28 +48,6 @@ def public_settings(db: Session) -> dict:
     return out
 
 
-def _json_value(value):
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    if isinstance(value, Decimal):
-        return str(value)
-    return value
-
-
-def _module_snapshot(db: Session) -> dict:
-    payload: dict[str, list[dict]] = {}
-    for name, obj in vars(models).items():
-        table = getattr(obj, "__table__", None)
-        if not isinstance(name, str) or table is None or not str(table.name).startswith("fv_"):
-            continue
-        rows = db.query(obj).all()
-        payload[table.name] = [
-            {column.name: _json_value(getattr(row, column.name)) for column in table.columns}
-            for row in rows
-        ]
-    return payload
-
-
 def _backup_root() -> Path:
     configured = os.getenv("AI_PRIVATE_UPLOAD_DIR", "").strip()
     root = Path(configured).expanduser() if configured else Path("/app/private_uploads" if Path("/app/private_uploads").exists() else "private_uploads")
@@ -83,14 +57,10 @@ def _backup_root() -> Path:
 
 
 def build_backup_bytes(db: Session) -> bytes:
+    from core.module_backups import export_bytes, resolve_backup_spec
     excel = build_lirio_workbook(db)
-    bio = BytesIO()
-    with ZipFile(bio, "w", ZIP_DEFLATED) as zf:
-        zf.writestr("floresvolcan_data.json", json.dumps(_module_snapshot(db), ensure_ascii=False, indent=2))
-        zf.writestr("excel/Lirio.xlsx", excel)
-        zf.writestr("excel/Liriodoc.xlsx", excel)
-        zf.writestr("README.txt", "Respaldo FloresVolcan: datos normalizados + exportaciones Excel compatibles con el flujo Lirio.\n")
-    return bio.getvalue()
+    return export_bytes(db, resolve_backup_spec('mod_floresvolcan'), archive=True,
+                        extras={'exports/Lirio.xlsx': excel, 'exports/Liriodoc.xlsx': excel})
 
 
 def _refresh_drive_token(db: Session) -> str:

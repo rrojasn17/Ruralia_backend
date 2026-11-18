@@ -7,20 +7,21 @@ from sqlalchemy import text
 
 from config import APP_NAME, APP_VERSION, validate_runtime_config
 from core.module_manager import _call_lifecycle, get_active_industry_module, sync_builtin_modules
-from core.models import ConfiguracionSistema, PasswordResetToken, SesionUsuario, Usuario
+from core.models import ConfiguracionSistema, ModuleUserRole, PasswordResetToken, SesionUsuario, Usuario
 from database import Base, SessionLocal, engine
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
-logger = logging.getLogger("navia-schema-upgrade")
+logger = logging.getLogger("ruralia-schema-upgrade")
 
 CORE_TABLES = [
     ConfiguracionSistema.__table__,
     Usuario.__table__,
     SesionUsuario.__table__,
     PasswordResetToken.__table__,
+    ModuleUserRole.__table__,
 ]
 
 

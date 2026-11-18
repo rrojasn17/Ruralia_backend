@@ -1,4 +1,4 @@
-navia.sudominio.com {
+ruralia.sudominio.com {
     encode zstd gzip
 
     request_body {

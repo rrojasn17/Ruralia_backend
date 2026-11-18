@@ -33,7 +33,7 @@ from modules.mod_caficultura.notification_ai import SEVERITY_RANK, evaluate_cand
 from modules.mod_caficultura.notification_candidates import NotificationCandidate, collect_candidates
 from modules.mod_caficultura.ai_automation_engine import process_due_automations
 
-logger = logging.getLogger("navia-api.notification-engine")
+logger = logging.getLogger("ruralia-api.notification-engine")
 WORKER_LOCK_ID = 20_260_720
 VALID_RECURRENCES = {"none", "daily", "weekly", "monthly"}
 
@@ -324,7 +324,7 @@ def enqueue_due_schedules(db: Session, now: datetime) -> tuple[int, int]:
             title=row.title,
             facts={"message": row.message, "scheduled_for": normalize_dt(row.next_run_at).isoformat()},
             recipient_user_ids=[row.usuario_id],
-            recommended_action="Ingrese a NAVIA si necesita completar o verificar esta actividad.",
+            recommended_action="Ingrese a ruralIA si necesita completar o verificar esta actividad.",
             cooldown_hours=1,
             force_send=False,
             context={
@@ -359,7 +359,7 @@ def enqueue_due_schedules(db: Session, now: datetime) -> tuple[int, int]:
                 entity_type="scheduled_notification",
                 entity_id=str(row.id),
                 severity="info",
-                title=f"NAVIA · {row.title}"[:180],
+                title=f"ruralIA · {row.title}"[:180],
                 message=row.message,
                 recommended_action=decision.recommended_action,
                 source_payload={"schedule_id": row.id, "sequence": sequence, "payload": row.payload or {}},

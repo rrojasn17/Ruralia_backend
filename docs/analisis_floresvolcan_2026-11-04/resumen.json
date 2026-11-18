@@ -1,0 +1,97 @@
+{
+  "Lirio.xlsx": {
+    "filas": {
+      "Entradas": 653,
+      "Salida Bulbo": 1239,
+      "Siembra": 3603,
+      "Corta": 18637
+    },
+    "totales_numericos": {
+      "entradas": 6532000,
+      "salidas": 5999050,
+      "siembra": 4995191,
+      "venta": 3271534,
+      "descarte": 92234,
+      "total_corta": 3363370,
+      "cantidad_repetida_en_corta": 28358759
+    },
+    "llaves_siembra": 3512,
+    "llaves_corta": 2491,
+    "llaves_siembra_no_unicas": 91,
+    "llaves_no_unicas_con_lados_distintos": 74,
+    "cortas_con_llave_ambigua": 808,
+    "estados_con_factor_1": {
+      "sin_cortas": 1021,
+      "menor_con_factor_1": 1652,
+      "excede_con_factor_1": 831,
+      "igual_con_factor_1": 8
+    },
+    "exceso_bruto_con_factor_1": 190193,
+    "incidencias_por_tipo": {
+      "llave_no_unica": 182,
+      "producto_no_coincide": 7,
+      "texto_en_conteo": 8,
+      "venta_no_coincide": 29,
+      "busqueda_no_coincide": 17,
+      "total_no_coincide": 5,
+      "fecha_semana_iso_distinta": 1236,
+      "llave_no_coincide_con_componentes": 1,
+      "posible_evento_duplicado": 2
+    },
+    "grupos_corta_identicos": [
+      [
+        10265,
+        10272
+      ]
+    ],
+    "sha256": "b27802c99dd54b80bdcbd69a32c083829ee18d0915e0950ac9bef9bd31cdf843"
+  },
+  "Lirio (2).xlsx": {
+    "filas": {
+      "Entradas": 653,
+      "Salida Bulbo": 1289,
+      "Siembra": 3603,
+      "Corta": 18637
+    },
+    "totales_numericos": {
+      "entradas": 6532000,
+      "salidas": 6227100,
+      "siembra": 4995191,
+      "venta": 3271534,
+      "descarte": 92234,
+      "total_corta": 3363370,
+      "cantidad_repetida_en_corta": 28358759
+    },
+    "llaves_siembra": 3512,
+    "llaves_corta": 2491,
+    "llaves_siembra_no_unicas": 91,
+    "llaves_no_unicas_con_lados_distintos": 74,
+    "cortas_con_llave_ambigua": 808,
+    "estados_con_factor_1": {
+      "sin_cortas": 1021,
+      "menor_con_factor_1": 1652,
+      "excede_con_factor_1": 831,
+      "igual_con_factor_1": 8
+    },
+    "exceso_bruto_con_factor_1": 190193,
+    "incidencias_por_tipo": {
+      "llave_no_unica": 182,
+      "producto_no_coincide": 7,
+      "texto_en_conteo": 8,
+      "venta_no_coincide": 29,
+      "busqueda_no_coincide": 17,
+      "total_no_coincide": 5,
+      "fecha_semana_iso_distinta": 1236,
+      "llave_no_coincide_con_componentes": 1,
+      "posible_evento_duplicado": 2
+    },
+    "grupos_corta_identicos": [
+      [
+        10265,
+        10272
+      ]
+    ],
+    "sha256": "621198e8fb21a9e1fab1c84ebea9a8bfe68b1fb184f0d8dbbdd335c99acbebe2"
+  },
+  "metodologia": "Valores guardados, sin recalcular. Llave sin distinguir mayúsculas. Factor 1 solo diagnóstico; texto omitido en sumas y señalado como incidencia. Diferencias de fechas contra ISO, sin asumir que sea el calendario acordado."
+}

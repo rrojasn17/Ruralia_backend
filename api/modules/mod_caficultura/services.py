@@ -373,11 +373,11 @@ def serialize_finca(db: Session, row: Finca) -> FincaOut:
     )
 
 def recibo_payload(row: ReciboCafe) -> str:
-    return f"NAVIA|RECIBO|{row.numero_recibo}|PRODUCTOR={row.productor_nombre}|FECHA={row.fecha.isoformat()}"
+    return f"ruralIA|RECIBO|{row.numero_recibo}|PRODUCTOR={row.productor_nombre}|FECHA={row.fecha.isoformat()}"
 
 
 def ot_payload(row: OrdenTrabajo) -> str:
-    return f"NAVIA|OT|{row.codigo_lote}|PROCESO={row.proceso}|INICIO={row.fecha_inicio.isoformat()}"
+    return f"ruralIA|OT|{row.codigo_lote}|PROCESO={row.proceso}|INICIO={row.fecha_inicio.isoformat()}"
 
 
 def serialize_recibo(row: ReciboCafe) -> ReciboOut:
@@ -1246,7 +1246,7 @@ def ensure_actividad_ambito_column(db: Session) -> None:
 
 
 def ensure_navia_operational_columns(db: Session) -> None:
-    """Ajustes no destructivos para bases existentes de NAVIA.
+    """Ajustes no destructivos para bases existentes de ruralIA.
 
     create_all crea tablas nuevas, pero no agrega columnas sobre tablas ya existentes.
     Estos ALTER mantienen compatibilidad al desplegar el paquete sobre una instancia en uso.
@@ -1377,7 +1377,7 @@ def bootstrap(
                 distrito="Río Conejo",
                 area=1,
                 cultivo="Café",
-                caracteristicas="Finca demostrativa para pruebas de trazabilidad NAVIA.",
+                caracteristicas="Finca demostrativa para pruebas de trazabilidad ruralIA.",
                 activa=True,
                 gestion_fincas_habilitada=True,
             ))

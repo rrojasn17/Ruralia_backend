@@ -15,7 +15,7 @@ from config import (
 )
 
 
-logger = logging.getLogger("navia-api.telegram")
+logger = logging.getLogger("ruralia-api.telegram")
 
 
 class TelegramError(RuntimeError):
@@ -71,7 +71,7 @@ def configure_webhook() -> dict[str, Any]:
 
 
 def send_message(chat_id: str, text: str, *, reply_markup: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    clean = str(text or "").strip() or "NAVIA no generó contenido para este mensaje."
+    clean = str(text or "").strip() or "ruralIA no generó contenido para este mensaje."
     chunks = [clean[index : index + 3900] for index in range(0, len(clean), 3900)]
     results: list[dict[str, Any]] = []
     for index, chunk in enumerate(chunks):

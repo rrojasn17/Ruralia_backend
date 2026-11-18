@@ -235,7 +235,7 @@ def delete_private_proof(storage_key: str | None) -> None:
 
 
 def build_receipt_pdf(row: ReciboCafe, cliente: Cliente) -> bytes:
-    """Genera el formato oficial usado por el botón Imprimir de NAVIA.
+    """Genera el formato oficial usado por el botón Imprimir de ruralIA.
 
     El documento conserva la composición apaisada del recibo físico: encabezado
     comercial, consecutivo, fecha, controles de calidad, cantidades y firmas.
@@ -406,7 +406,7 @@ def _official_logo_bytes() -> bytes | None:
     if not url.startswith(("http://", "https://")):
         return None
     try:
-        request = UrlRequest(url, headers={"User-Agent": "NAVIA-Receipt/1.0"})
+        request = UrlRequest(url, headers={"User-Agent": "ruralIA-Receipt/1.0"})
         with urlopen(request, timeout=2.5) as response:  # noqa: S310 - URL is controlled by server configuration.
             content_type = str(response.headers.get("Content-Type") or "").lower()
             content = response.read(2 * 1024 * 1024 + 1)

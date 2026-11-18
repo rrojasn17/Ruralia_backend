@@ -404,7 +404,7 @@ def _platform_name(db: Session) -> str:
         .filter(ConfiguracionSistema.clave == "app_name")
         .first()
     )
-    return str(row.valor).strip() if row and str(row.valor).strip() else "NAVIA"
+    return str(row.valor).strip() if row and str(row.valor).strip() else "ruralIA"
 
 
 def process_farm_message(
@@ -432,8 +432,8 @@ def process_farm_message(
     platform_name = _platform_name(db)
     base_instructions = (
         str(agent.instructions or "")
-        .replace("NAVIA", platform_name)
-        .replace("Navia", platform_name)
+        .replace("ruralIA", platform_name)
+        .replace("ruralIA", platform_name)
     )
     instructions = (
         f"{base_instructions}\n\n{FARM_GUARDRAILS}\n{SENSOR_ANALYSIS_GUIDANCE}\n\n"

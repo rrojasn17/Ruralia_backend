@@ -105,6 +105,7 @@ class UsuarioOut(BaseModel):
     firma_url: str | None = None
     permisos: list[str] = Field(default_factory=list)
     permisos_asignados: list[str] = Field(default_factory=list)
+    module_roles: dict[str, str] = Field(default_factory=dict)
     onboarding_version: int = 0
     onboarding_current_version: int = 1
     onboarding_required: bool = True
@@ -116,7 +117,7 @@ class UsuarioOut(BaseModel):
 
 class ConfiguracionOut(BaseModel):
     session_days: int = 30
-    app_name: str = "NAVIA"
+    app_name: str = "ruralIA"
     app_logo_url: str | None = None
     alert_whatsapp: str | None = None
     alert_email: str | None = None
@@ -133,7 +134,7 @@ class ConfiguracionUpdate(BaseModel):
 
 
 class BrandingOut(BaseModel):
-    app_name: str = "NAVIA"
+    app_name: str = "ruralIA"
     app_logo_url: str | None = None
 
 
@@ -153,7 +154,8 @@ class ModuleOut(BaseModel):
 
 class ModuleRuntimeOut(BaseModel):
     active_module: ModuleOut | None = None
-    effective_permissions: list[str] = Field(default_factory=list)
+    effective_permissions: list[str]
+    active_module_role: str | None = None
     available_modules: list[ModuleOut] = Field(default_factory=list)
     # Manifiestos de runtimes desplegados, aunque todavía no hayan sido importados.
     # El frontend los usa para saber qué rutas pertenecen a un módulo inactivo.

@@ -10,12 +10,14 @@ from PIL import Image, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from config import APP_BASE_URL, APP_NAME
-from core.models import AppModule, SesionUsuario, Usuario
+from core.models import AppModule, ModuleUserRole, SesionUsuario, Usuario
 from core.module_manager import (
     activate_module,
     collect_user_delete_blockers,
     deactivate_module,
     effective_permissions,
+    role_for_module,
+    module_permissions,
     export_module_package,
     ensure_superadmin,
     get_active_industry_module,
@@ -132,6 +134,7 @@ async def upload_brand_logo(file: UploadFile = File(...), current: Usuario = Dep
 
 @router.delete("/configuracion/branding/logo", response_model=ConfiguracionOut)
 def delete_brand_logo(current: Usuario = Depends(require_core_permission("core:config:manage")), db: Session = Depends(get_db)):
+    ensure_superadmin(current)
     previous = get_config_value(db, "app_logo_url", "")
     set_config(db, "app_logo_url", "", "Logotipo institucional")
     db.commit()
@@ -244,6 +247,7 @@ async def upload_signature(usuario_id: int, file: UploadFile = File(...), curren
 
 @router.delete("/usuarios/{usuario_id}", status_code=204)
 def delete_user(usuario_id: int, current: Usuario = Depends(require_core_permission("core:users:manage")), db: Session = Depends(get_db)):
+    ensure_superadmin(current)
     row = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -291,6 +295,7 @@ def module_runtime(current: Usuario = Depends(get_current_user), db: Session = D
     return ModuleRuntimeOut(
         active_module=module_to_dict(active) if active else None,
         effective_permissions=effective_permissions(db, current),
+        active_module_role=role_for_module(db, current, active.key) if active else None,
         available_modules=[module_to_dict(row) for row in available],
         known_manifests=runtime_manifests(),
     )
@@ -338,3 +343,129 @@ def deactivate(key: str, current: Usuario = Depends(get_current_user), db: Sessi
 def uninstall(key: str, current: Usuario = Depends(get_current_user), db: Session = Depends(get_db)):
     ensure_superadmin(current)
     return module_to_dict(uninstall_module(db, key))
+
+
+# ---------- Usuarios y roles específicos por industria ----------
+from pydantic import BaseModel, EmailStr, Field
+
+
+class ModuleUserCreate(BaseModel):
+    nombre: str = Field(min_length=2, max_length=180)
+    correo: EmailStr
+    password: str | None = Field(default=None, min_length=10, max_length=128)
+    role: str = 'trabajador'
+    activo: bool = True
+
+
+class ModuleUserPatch(BaseModel):
+    role: str | None = None
+    activo: bool | None = None
+
+
+def _module_for_users(db: Session, module_key: str, current: Usuario) -> AppModule:
+    row = db.query(AppModule).filter(AppModule.key == module_key, AppModule.status == 'active').first()
+    if not row:
+        raise HTTPException(404, 'Módulo inactivo o inexistente')
+    current_role = role_for_module(db, current, module_key)
+    if not current.is_superadmin and current_role not in {'gerente', 'admin', 'superadmin'}:
+        raise HTTPException(403, 'No administra usuarios de este módulo')
+    return row
+
+
+def _role_valid(module: AppModule, role: str, current: Usuario, db: Session) -> str:
+    role = 'superadmin' if str(role).strip().lower() == 'superadmin' else normalize_role(role)
+    allowed = {str(r['key']) for r in (module.manifest or {}).get('roles', [])}
+    allowed.add('superadmin')
+    if role not in allowed:
+        raise HTTPException(422, 'Rol no disponible para este módulo')
+    if role == 'superadmin' and not (current.is_superadmin or role_for_module(db, current, module.key) == 'superadmin'):
+        raise HTTPException(403, 'Solo un superadmin puede asignar otro superadmin del módulo')
+    return role
+
+
+@router.get('/modules/{module_key}/users')
+def module_users(module_key: str, current: Usuario = Depends(get_current_user), db: Session = Depends(get_db),
+                 page: int = 1, page_size: int = 40, q: str = ''):
+    module = _module_for_users(db, module_key, current)
+    if page < 1 or not 1 <= page_size <= 100:
+        raise HTTPException(422, 'Paginación inválida')
+    query = db.query(Usuario, ModuleUserRole).join(ModuleUserRole, Usuario.id == ModuleUserRole.usuario_id).filter(
+        ModuleUserRole.module_key == module_key
+    )
+    if q.strip():
+        term = '%' + q.strip().replace('!', '!!').replace('%', '!%').replace('_', '!_') + '%'
+        query = query.filter(Usuario.nombre.ilike(term, escape='!') | Usuario.correo.ilike(term, escape='!'))
+    total = query.count()
+    rows = query.order_by(Usuario.nombre, Usuario.id).offset((page - 1) * page_size).limit(page_size).all()
+    role_map = (module.manifest or {}).get('role_permissions') or {}
+    all_module_permissions = [p for p in (module.manifest or {}).get('permissions', []) if p != 'floresvolcan:records:delete']
+    return {'items': [{'id': u.id, 'nombre': u.nombre, 'correo': u.correo, 'rol': m.role,
+                       'activo': u.activo, 'is_superadmin': u.is_superadmin,
+                       'permisos': (['*'] if u.is_superadmin else all_module_permissions if m.role == 'superadmin' else role_map.get(m.role, []))}
+                      for u, m in rows], 'total': total, 'page': page, 'page_size': page_size}
+
+
+@router.post('/modules/{module_key}/users', status_code=201)
+def create_module_user(module_key: str, payload: ModuleUserCreate,
+                       current: Usuario = Depends(get_current_user), db: Session = Depends(get_db)):
+    module = _module_for_users(db, module_key, current)
+    role = _role_valid(module, payload.role, current, db)
+    email = str(payload.correo).strip().lower()
+    user = db.query(Usuario).filter(Usuario.correo == email).first()
+    if user:
+        if db.query(ModuleUserRole.id).filter(ModuleUserRole.usuario_id == user.id, ModuleUserRole.module_key == module_key).first():
+            raise HTTPException(409, 'Este usuario ya pertenece al módulo')
+        # No reescribir credenciales, estado ni permisos de una identidad existente.
+    else:
+        if not payload.password:
+            raise HTTPException(422, 'Contraseña requerida para un usuario nuevo')
+        try:
+            validar_fortaleza_contrasena(payload.password)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        user = Usuario(nombre=payload.nombre.strip(), correo=email,
+                       hash_contrasena=hashear_contrasena(payload.password),
+                       rol='operario', activo=payload.activo, is_superadmin=False, permisos=[])
+        db.add(user); db.flush()
+    db.add(ModuleUserRole(usuario_id=user.id, module_key=module_key, role=role))
+    db.commit()
+    return {'id': user.id, 'nombre': user.nombre, 'correo': user.correo, 'rol': role, 'activo': user.activo}
+
+
+@router.patch('/modules/{module_key}/users/{user_id}')
+def edit_module_user(module_key: str, user_id: int, payload: ModuleUserPatch,
+                     current: Usuario = Depends(get_current_user), db: Session = Depends(get_db)):
+    module = _module_for_users(db, module_key, current)
+    membership = db.query(ModuleUserRole).filter(ModuleUserRole.module_key == module_key,
+                                                   ModuleUserRole.usuario_id == user_id).first()
+    if not membership:
+        raise HTTPException(404, 'Usuario no asignado a este módulo')
+    if membership.role == 'superadmin' and not (current.is_superadmin or role_for_module(db, current, module_key) == 'superadmin'):
+        raise HTTPException(403, 'No puede modificar un superadmin')
+    if payload.role is not None:
+        membership.role = _role_valid(module, payload.role, current, db)
+    if payload.activo is not None:
+        # Desactivar identidad tiene efecto global: solo Root puede hacerlo.
+        if not current.is_superadmin:
+            raise HTTPException(403, 'El estado global solo lo administra Root')
+        user = db.get(Usuario, user_id)
+        if user and not user.is_superadmin:
+            user.activo = payload.activo
+    db.commit()
+    return {'id': user_id, 'rol': membership.role, 'activo': db.get(Usuario, user_id).activo}
+
+
+@router.delete('/modules/{module_key}/users/{user_id}', status_code=204)
+def unlink_module_user(module_key: str, user_id: int, current: Usuario = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    _module_for_users(db, module_key, current)
+    membership = db.query(ModuleUserRole).filter(ModuleUserRole.usuario_id == user_id,
+                                                   ModuleUserRole.module_key == module_key).first()
+    if not membership:
+        raise HTTPException(404, 'Usuario no asignado')
+    if membership.role == 'superadmin' and not current.is_superadmin:
+        raise HTTPException(403, 'Solo Root puede retirar un superadmin')
+    if user_id == current.id:
+        raise HTTPException(409, 'No puede retirarse a sí mismo del módulo')
+    db.delete(membership); db.commit()
+    return Response(status_code=204)

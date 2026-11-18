@@ -219,7 +219,7 @@ def _query_receipts(db: Session, parameters: dict[str, Any]) -> dict[str, Any]:
         ],
         rows=rows,
         total=total,
-        filename="recibos-navia.csv",
+        filename="recibos-ruralia.csv",
     )]
     visualization = str(parameters.get("visualization") or "table")
     if visualization in {"bar", "donut", "line"}:
@@ -309,7 +309,7 @@ def _query_lots(db: Session, parameters: dict[str, Any], *, active_only: bool) -
         ],
         rows=rows,
         total=total,
-        filename="lotes-activos-navia.csv" if active_only else "lotes-navia.csv",
+        filename="lotes-activos-ruralia.csv" if active_only else "lotes-ruralia.csv",
     )]
     visualization = str(parameters.get("visualization") or "table")
     if visualization in {"bar", "donut", "line"}:
@@ -384,7 +384,7 @@ def _query_sale_requests(db: Session, parameters: dict[str, Any]) -> dict[str, A
         ],
         rows=rows,
         total=total,
-        filename="solicitudes-venta-navia.csv",
+        filename="solicitudes-venta-ruralia.csv",
     )]
     visualization = str(parameters.get("visualization") or "table")
     if visualization in {"bar", "donut", "line"}:
@@ -425,7 +425,7 @@ def _simple_query(
         columns=columns,
         rows=rows,
         total=total,
-        filename=f"{dataset}-navia.csv",
+        filename=f"{dataset}-ruralia.csv",
     )
     return {"ok": True, "dataset": dataset, "count": len(rows), "total_matches": total, "summary": f"Encontré {total} registros en {title.lower()}.", "components": [component]}
 
@@ -477,7 +477,7 @@ def _query_farm_records(db: Session, parameters: dict[str, Any]) -> dict[str, An
         ],
         rows=rows,
         total=total,
-        filename="registros-finca-navia.csv",
+        filename="registros-finca-ruralia.csv",
     )]
     visualization = str(parameters.get("visualization") or "table")
     if visualization in {"bar", "donut", "line"}:
@@ -522,7 +522,7 @@ def _query_alerts(db: Session, parameters: dict[str, Any]) -> dict[str, Any]:
         ],
         rows=rows,
         total=total,
-        filename="alertas-navia.csv",
+        filename="alertas-ruralia.csv",
     )]
     visualization = str(parameters.get("visualization") or "table")
     if visualization in {"bar", "donut", "line"}:
@@ -564,7 +564,7 @@ def _query_sales(db: Session, parameters: dict[str, Any]) -> dict[str, Any]:
         ],
         rows=rows,
         total=total,
-        filename="ventas-navia.csv",
+        filename="ventas-ruralia.csv",
     )]
     visualization = str(parameters.get("visualization") or "table")
     if visualization in {"bar", "donut", "line"}:

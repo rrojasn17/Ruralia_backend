@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, func, text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.types import JSON
 
@@ -48,6 +48,23 @@ class Usuario(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
     sesiones = relationship("SesionUsuario", back_populates="usuario", cascade="all, delete-orphan")
+
+
+class ModuleUserRole(Base):
+    """Un mismo usuario puede tener roles diferentes en módulos diferentes.
+
+    La identidad y autenticación siguen siendo globales; esta asignación NO
+    concede privilegios del core ni de otros módulos.
+    """
+    __tablename__ = "core_module_user_roles"
+    __table_args__ = (UniqueConstraint("usuario_id", "module_key", name="uq_module_user_role"),)
+
+    id = Column(Integer, primary_key=True)
+    usuario_id = Column(Integer, ForeignKey("navia_usuarios.id", ondelete="CASCADE"), nullable=False, index=True)
+    module_key = Column(String(120), nullable=False, index=True)
+    role = Column(String(40), nullable=False, default="trabajador")
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
 
 class SesionUsuario(Base):

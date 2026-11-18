@@ -21,7 +21,7 @@ from config import (
     SMTP_USE_TLS,
 )
 
-logger = logging.getLogger("navia-api.email")
+logger = logging.getLogger("ruralia-api.email")
 
 
 def _smtp_client():
@@ -104,20 +104,20 @@ def send_notification_email(
     severity_label = severity_labels.get(severity, "Atención")
     safe_subject = subject.strip()[:160] or f"Aviso de {APP_NAME}"
     safe_summary = summary.strip()[:4000]
-    safe_action = (recommended_action or "Ingrese a NAVIA para revisar el evento.").strip()[:2000]
+    safe_action = (recommended_action or "Ingrese a ruralIA para revisar el evento.").strip()[:2000]
 
     message = EmailMessage()
     message["Subject"] = safe_subject
     message["From"] = formataddr((SMTP_FROM_NAME, SMTP_FROM_EMAIL))
     message["To"] = recipient
-    message["X-NAVIA-Severity"] = severity
+    message["X-ruralIA-Severity"] = severity
     message.set_content(
         f"Hola {safe_name},\n\n"
         f"Nivel: {severity_label}\n\n"
         f"{safe_summary}\n\n"
         f"Acción recomendada:\n{safe_action}\n\n"
-        f"Abrir NAVIA: {FRONTEND_URL}\n\n"
-        "Este correo fue generado por el motor de notificaciones de NAVIA a partir de datos operativos registrados en la plataforma.\n"
+        f"Abrir ruralIA: {FRONTEND_URL}\n\n"
+        "Este correo fue generado por el motor de notificaciones de ruralIA a partir de datos operativos registrados en la plataforma.\n"
     )
 
     message.add_alternative(
@@ -139,11 +139,11 @@ def send_notification_email(
                 </div>
                 <p style="margin:28px 0">
                   <a href="{escape(FRONTEND_URL, quote=True)}" style="display:inline-block;background:#166534;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px">
-                    Abrir NAVIA
+                    Abrir ruralIA
                   </a>
                 </p>
                 <p style="color:#64748b;font-size:12px;line-height:1.5">
-                  Aviso automático basado en hechos registrados en NAVIA. La IA redacta y prioriza el mensaje, pero no modifica los datos de origen.
+                  Aviso automático basado en hechos registrados en ruralIA. La IA redacta y prioriza el mensaje, pero no modifica los datos de origen.
                 </p>
               </div>
             </div>

@@ -947,7 +947,7 @@ def business_overview(db: Session, _: dict[str, Any]) -> dict[str, Any]:
         "coffee_in_patio_fanegas": patio.get("fanegas", 0),
         "primary_value": int(active_lots or 0),
         "summary": (
-            f"NAVIA registra {int(farms or 0)} fincas, {int(workers or 0)} trabajadores y "
+            f"ruralIA registra {int(farms or 0)} fincas, {int(workers or 0)} trabajadores y "
             f"{int(active_lots or 0)} lotes activos."
         ),
     }

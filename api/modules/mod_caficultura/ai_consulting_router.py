@@ -84,7 +84,7 @@ from modules.mod_caficultura.telegram_bridge import process_telegram_update
 from services.telegram_service import TelegramError, configure_webhook, send_message
 
 
-logger = logging.getLogger("navia-api.ai-router")
+logger = logging.getLogger("ruralia-api.ai-router")
 router = APIRouter(prefix="/ai", tags=["ai-consulting"])
 manager_dependency = require_roles("gerente", "administrador", "admin", "superadmin")
 
@@ -509,7 +509,7 @@ def send_chat_message(
         content = (
             "El servicio de IA todavía no está configurado. Un administrador debe revisar OPENAI_API_KEY y el modelo permitido."
             if "configur" in str(exc).lower() or "openai_api_key" in str(exc).lower()
-            else "No pude completar la respuesta. Los datos de NAVIA no fueron modificados; puede intentarlo nuevamente."
+            else "No pude completar la respuesta. Los datos de ruralIA no fueron modificados; puede intentarlo nuevamente."
         )
         assistant = AIMessage(
             conversation_id=conversation_id,
@@ -768,7 +768,7 @@ def test_telegram(
 ):
     _validate_telegram_recipients(db, current, [payload.chat_id])
     try:
-        send_message(payload.chat_id, f"✅ Prueba de NAVIA completada para {current.nombre}.")
+        send_message(payload.chat_id, f"✅ Prueba de ruralIA completada para {current.nombre}.")
     except TelegramError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return MessageOut(message="Mensaje de prueba enviado")

@@ -177,15 +177,39 @@
       "top_level": true
     },
     {
-      "group": "Finca",
-      "label": "Gestión de Fincas",
-      "to": "/gestionfincas",
-      "icon": "i-lucide-tractor",
-      "permission": "gestionfincas:view",
-      "training_id": "nav-farm-management"
+      "group": "Producción",
+      "label": "Clientes",
+      "to": "/clientes",
+      "icon": "i-lucide-contact",
+      "permission": "clientes:view",
+      "training_id": "nav-customers"
     },
     {
-      "group": "Finca",
+      "group": "Producción",
+      "label": "Proveedores",
+      "to": "/proveedores",
+      "icon": "i-lucide-building-2",
+      "permission": "proveedores:view",
+      "training_id": "nav-suppliers"
+    },
+    {
+      "group": "Producción",
+      "label": "Insumos",
+      "to": "/insumos",
+      "icon": "i-lucide-package",
+      "permission": "insumos:view",
+      "training_id": "nav-supplies"
+    },
+    {
+      "group": "Producción",
+      "label": "Informes",
+      "to": "/informes",
+      "icon": "i-lucide-chart-no-axes-combined",
+      "permission": "informes:view",
+      "training_id": "nav-reports"
+    },
+    {
+      "group": "Producción",
       "label": "Notas rápidas",
       "to": "/notas",
       "icon": "i-lucide-notebook-pen",
@@ -202,7 +226,7 @@
     },
     {
       "group": "Beneficiado",
-      "label": "Solicitud de Venta",
+      "label": "Solicitud de venta",
       "to": "/solicitudes-venta",
       "icon": "i-lucide-hand-coins",
       "permission": "ventas:view",
@@ -233,38 +257,6 @@
       "permission": "ventas:view",
       "training_id": "nav-sold-lots",
       "parent": "Lotes"
-    },
-    {
-      "group": "Gestión",
-      "label": "Clientes",
-      "to": "/clientes",
-      "icon": "i-lucide-contact",
-      "permission": "clientes:view",
-      "training_id": "nav-customers"
-    },
-    {
-      "group": "Gestión",
-      "label": "Proveedores",
-      "to": "/proveedores",
-      "icon": "i-lucide-building-2",
-      "permission": "proveedores:view",
-      "training_id": "nav-suppliers"
-    },
-    {
-      "group": "Gestión",
-      "label": "Insumos",
-      "to": "/insumos",
-      "icon": "i-lucide-package",
-      "permission": "insumos:view",
-      "training_id": "nav-supplies"
-    },
-    {
-      "group": "Gestión",
-      "label": "Informes",
-      "to": "/informes",
-      "icon": "i-lucide-chart-no-axes-combined",
-      "permission": "informes:view",
-      "training_id": "nav-reports"
     },
     {
       "group": "Administración módulo",

@@ -1019,7 +1019,7 @@ def _execute_sale_request(db: Session, action: AIPendingAction, user: Usuario) -
             solicitud_id=row.id,
             titulo=str(payload.get("purchase_order_title") or attachment.original_name)[:180],
             tipo="orden_compra",
-            descripcion="Orden de compra adjuntada desde NAVIA IA.",
+            descripcion="Orden de compra adjuntada desde ruralIA IA.",
             file_url=f"{APP_BASE_URL}/uploads/{relative}",
             file_name=safe_original_name(attachment.original_name),
             content_type=attachment.media_type,

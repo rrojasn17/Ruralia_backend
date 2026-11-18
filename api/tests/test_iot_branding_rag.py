@@ -89,7 +89,7 @@ def test_white_label_is_public_but_only_managers_can_change_it():
         _login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
         assert client.delete("/configuracion/branding/logo").status_code == 200
         assert (
-            client.patch("/configuracion", json={"app_name": "NAVIA"}).status_code
+            client.patch("/configuracion", json={"app_name": "ruralIA"}).status_code
             == 200
         )
 

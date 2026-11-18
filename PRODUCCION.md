@@ -1,4 +1,4 @@
-# Puesta en producción de NAVIA
+# Puesta en producción de ruralIA
 
 ## 1. Respaldo obligatorio
 
@@ -112,12 +112,12 @@ La clave nunca debe enviarse al frontend ni guardarse en PostgreSQL. El agente r
 Prueba API:
 
 ```bash
-curl -i -c /tmp/navia-cookie.txt \
+curl -i -c /tmp/ruralia-cookie.txt \
   -X POST https://DOMINIO/backend/auth/login \
   -H 'Content-Type: application/json' \
   --data '{"correo":"CORREO","password":"CLAVE"}'
 
-curl -i -b /tmp/navia-cookie.txt https://DOMINIO/backend/auth/me
+curl -i -b /tmp/ruralia-cookie.txt https://DOMINIO/backend/auth/me
 ```
 
 Ambas respuestas deben ser `200`.

@@ -134,7 +134,10 @@ def test_backup_roundtrip_includes_iot_data_relationships_and_preset(databases):
     for model in IOT_BACKUP_MODELS:
         assert len(payload["tables"][model.__tablename__]) == 1
     result = restore(target, payload)
-    assert result["advertencias"] == []
+    assert result['identidades_nuevas'] == 1
+    author = target.query(Usuario).one()
+    assert author.activo is False and author.is_superadmin is False
+    assert author.hash_contrasena != 'test-only'
     node = target.query(IoTNode).one()
     assert node.finca.nombre == "Finca Backup"
     assert node.integration.application_id == "backup-app"

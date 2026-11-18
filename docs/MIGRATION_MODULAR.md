@@ -1,6 +1,6 @@
 # Migración a arquitectura modular
 
-## Instalación existente (Navia/Caficultura)
+## Instalación existente (ruralIA/Caficultura)
 
 1. Respaldar PostgreSQL y uploads.
 2. Aplicar primero el ZIP diferencial de backend y luego el de frontend.
@@ -33,3 +33,7 @@
 ## Rollback
 
 La desinstalación actual es lógica/no destructiva. No borra tablas. Para rollback de código, restaurar la versión anterior de frontend/backend y la copia de base de datos si se ejecutaron migraciones incompatibles posteriores.
+
+## Respaldos por industria
+
+Los respaldos de datos usan un proveedor `BACKUP_ENTRYPOINT` descubierto en `runtime.py`, independiente del empaquetado o la activación de módulos. Café y Flores comparten el motor del núcleo y cada uno declara únicamente sus modelos y adjuntos. Los respaldos de industria no restauran las cuentas, credenciales, marca ni configuración global. Para implementar un módulo nuevo, consultar [RESPALDOS_MODULARES.md](RESPALDOS_MODULARES.md).

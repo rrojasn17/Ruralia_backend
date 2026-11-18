@@ -19,6 +19,7 @@ def _tables():
 # Migración aditiva v0.1 -> v0.2. No elimina ni renombra datos existentes.
 _ADDITIVE_COLUMNS = {
     "fv_sap_products": {
+        "expected_stems_per_bulb": "NUMERIC(12,3) DEFAULT 1",
         "crop_id": "INTEGER",
         "material_type": "VARCHAR(60) DEFAULT 'bulbo'",
         "purchase_unit": "VARCHAR(40) DEFAULT 'caja'", "inventory_unit": "VARCHAR(40) DEFAULT 'bulbo'",
@@ -27,6 +28,7 @@ _ADDITIVE_COLUMNS = {
         "variety": "VARCHAR(180)", "caliber": "VARCHAR(60)", "common_code": "VARCHAR(20)",
         "color": "VARCHAR(30)", "default_density": "NUMERIC(12,3)", "default_cycle_weeks": "INTEGER",
     },
+    "fv_purchase_orders": {"paid_at":"DATE", "shipped_at":"DATE"},
     "fv_purchase_order_lines": {
         "variety_snapshot": "VARCHAR(180)", "caliber_snapshot": "VARCHAR(60)",
         "common_code_snapshot": "VARCHAR(20)", "color_snapshot": "VARCHAR(30)",
@@ -46,22 +48,32 @@ _ADDITIVE_COLUMNS = {
         "purchase_quantity_received": "NUMERIC(18,3)", "purchase_unit_snapshot": "VARCHAR(40)", "inventory_unit_snapshot": "VARCHAR(40)",
         "quantity_issued": "NUMERIC(18,3) DEFAULT 0",
     },
-    "fv_workers": {"user_id": "INTEGER"},
+    "fv_production_spaces": {"google_maps_url": "VARCHAR(1000)","length_m": "NUMERIC(18,3)", "width_m": "NUMERIC(18,3)"},
+    "fv_workers": {"legacy_employee_code": "VARCHAR(50)","user_id": "INTEGER", "job_title": "VARCHAR(120)"},
     "fv_work_crews": {"planting_order_id": "INTEGER"},
-    "fv_planting_orders": {"approved_at": "TIMESTAMP", "crop_id": "INTEGER"},
+    "fv_planting_orders": {"approved_at": "TIMESTAMP", "crop_id": "INTEGER",
+        "bed_profile_id": "INTEGER", "planned_quantity": "INTEGER", "qr_token": "VARCHAR(64)", "bed_area_snapshot": "NUMERIC(18,3)",
+        "bed_capacity_snapshot": "INTEGER", "density_snapshot": "NUMERIC(18,6)",
+        "material_type_snapshot": "VARCHAR(60)", "crop_name_snapshot": "VARCHAR(120)"},
     "fv_requisition_lines": {"quantity_planted": "NUMERIC(18,3) DEFAULT 0"},
     "fv_production_batches": {
+        "bed_cycle_id": "INTEGER", "history_review_required": "BOOLEAN DEFAULT FALSE",
+        "expected_stems_per_bulb": "NUMERIC(12,3) DEFAULT 1",
         "crop_id": "INTEGER", "inventory_lot_id": "INTEGER", "greenhouse_space_id": "INTEGER", "bed_space_id": "INTEGER",
         "side": "VARCHAR(4)", "planting_week": "VARCHAR(12)", "projected_harvest_week": "VARCHAR(12)",
         "cycle_weeks": "INTEGER",
     },
-    "fv_planting_records": {
+    "fv_planting_records": {"bed_capacity_units_snapshot": "INTEGER","worker_id": "INTEGER",
+        "request_hash": "VARCHAR(64)",
         "client_token": "VARCHAR(80)", "greenhouse_space_id": "INTEGER", "bed_space_id": "INTEGER",
         "side": "VARCHAR(4)", "density": "NUMERIC(12,3)", "area_m2": "NUMERIC(18,4)",
         "cycle_weeks": "INTEGER", "planting_week": "VARCHAR(12)", "projected_harvest_week": "VARCHAR(12)",
         "sealed_at": "DATE",
     },
-    "fv_harvest_records": {
+    "fv_harvest_records": {"worker_id": "INTEGER",
+        "voided_at": "TIMESTAMP", "voided_by_id": "INTEGER", "void_reason": "VARCHAR(1000)",
+        "request_hash": "VARCHAR(64)",
+        "harvest_order_id": "INTEGER",
         "client_token": "VARCHAR(80)", "planting_record_id": "INTEGER", "bed_space_id": "INTEGER",
         "bloom_1_qty": "NUMERIC(18,3) DEFAULT 0", "bloom_2_qty": "NUMERIC(18,3) DEFAULT 0",
         "bloom_3_5_qty": "NUMERIC(18,3) DEFAULT 0", "discard_qty": "NUMERIC(18,3) DEFAULT 0",
@@ -69,10 +81,18 @@ _ADDITIVE_COLUMNS = {
         "actual_harvest_week": "VARCHAR(12)",
     },
     "fv_technical_closures": {
+        "total_expected": "NUMERIC(18,3) DEFAULT 0", "total_loss": "NUMERIC(18,3) DEFAULT 0",
+        "previous_summary_json": "TEXT",
         "total_sale": "NUMERIC(18,3) DEFAULT 0", "total_discarded": "NUMERIC(18,3) DEFAULT 0",
         "sale_yield_percentage": "NUMERIC(10,3) DEFAULT 0",
     },
+    "fv_harvest_orders": {"qr_token": "VARCHAR(64)","overage_quantity": "NUMERIC(18,3) DEFAULT 0"},
+    "fv_material_resolutions": {"client_token": "VARCHAR(80)", "request_hash": "VARCHAR(64)"},
 }
+_ADDITIVE_COLUMNS["fv_requisition_lines"].update({
+    "quantity_returned": "NUMERIC(18,3) DEFAULT 0", "quantity_field_loss": "NUMERIC(18,3) DEFAULT 0",
+    "quantity_released": "NUMERIC(18,3) DEFAULT 0",
+})
 
 
 def _add_missing_columns(db: Session) -> None:
@@ -89,6 +109,10 @@ def _add_missing_columns(db: Session) -> None:
 def _seed_defaults(db: Session) -> None:
     """Precarga editable derivada de los Excel del cliente. Idempotente."""
     from modules.mod_floresvolcan.seed_data import DEFAULT_SUPPLIERS, LILY_CATALOGS, LILY_GREENHOUSE_BEDS
+
+    if db.query(ModuleSetting.id).filter(ModuleSetting.key == "excel.exploration", ModuleSetting.value_text == "true").first():
+        # The chosen workbook remains the catalog source across restarts.
+        return
 
     crop = db.query(FlowerCrop).filter(FlowerCrop.code == "LIRIO").first()
     if crop is None:
@@ -201,7 +225,61 @@ def install(db: Session) -> None:
     # Primero migra tablas v0.1 que pudieran existir y luego crea las nuevas (p.ej. fv_inventory_issues).
     _add_missing_columns(db)
     Base.metadata.create_all(bind=db.get_bind(), tables=_tables())
+    if db.get_bind().dialect.name == "postgresql":
+        # Historical sheets have names, but no national IDs or hire dates.
+        # New manual records still require both through WorkerIn.
+        db.execute(text('ALTER TABLE fv_workers ALTER COLUMN identification DROP NOT NULL'))
+        db.execute(text('ALTER TABLE fv_workers ALTER COLUMN hire_date DROP NOT NULL'))
+        db.execute(text('ALTER TABLE fv_planting_records ALTER COLUMN density TYPE NUMERIC(18,6)'))
     _seed_defaults(db)
+    _upgrade_production_control(db)
+    from .worker_codes import normalize_worker_codes, install_worker_code_guard
+    install_worker_code_guard(db)
+    normalize_worker_codes(db)
+    from .material_defaults import upgrade_material_defaults
+    upgrade_material_defaults(db)
+    import secrets
+    from .models import HarvestOrder
+    for model in (PlantingOrder,HarvestOrder):
+        for order in db.query(model).filter(model.status.in_(['approved','in_progress']),model.qr_token.is_(None)):
+            order.qr_token=secrets.token_urlsafe(32)
+    db.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS uq_fv_harvest_qr_v11 ON fv_harvest_orders (qr_token)'))
+    db.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS uq_fv_planting_qr_v11 ON fv_planting_orders (qr_token)'))
+    db.commit()
+
+
+def _upgrade_production_control(db: Session) -> None:
+    """Conserva las cantidades previas. Ninguna corta ambigua se asigna automáticamente."""
+    from sqlalchemy import func
+    from .models import BedCycle, HarvestRecord, PlantingRecord, MaterialResolution
+    for model in (PlantingRecord, HarvestRecord, MaterialResolution):
+        duplicates = (db.query(model.client_token).filter(model.client_token.isnot(None))
+                      .group_by(model.client_token).having(func.count(model.id) > 1).first())
+        if duplicates:
+            raise RuntimeError("Flores Volcán: existen identificadores de campo duplicados; revise el histórico antes de actualizar")
+        db.execute(text(f'CREATE UNIQUE INDEX IF NOT EXISTS "uq_{model.__tablename__}_token_v07" ON "{model.__tablename__}" (client_token)'))
+    marker = db.query(ModuleSetting).filter(ModuleSetting.key == "production_control.v07").first()
+    if not marker:
+        for cut in db.query(HarvestRecord).all():
+            # Las versiones anteriores no tenían total_output; quantity_harvested ya era venta.
+            if not cut.total_output and (cut.quantity_harvested or cut.discard_qty):
+                cut.total_output = (cut.quantity_harvested or 0) + (cut.discard_qty or 0)
+        groups = {}
+        for batch in db.query(ProductionBatch).filter(ProductionBatch.bed_cycle_id.is_(None)).all():
+            if batch.bed_space_id:
+                groups.setdefault(batch.bed_space_id, []).append(batch)
+        for bed_id, batches in groups.items():
+            cycle = db.query(BedCycle).filter(BedCycle.bed_space_id == bed_id, BedCycle.status != "cleaned").first()
+            if not cycle:
+                ids = [b.id for b in batches]
+                has_cuts = db.query(HarvestRecord.id).filter(HarvestRecord.production_batch_id.in_(ids)).first()
+                state = "pending_cleaning" if all(b.status == "closed" for b in batches) else "harvesting" if has_cuts else "growing"
+                cycle = BedCycle(bed_space_id=bed_id, status=state)
+                db.add(cycle); db.flush()
+            for batch in batches:
+                batch.bed_cycle_id = cycle.id
+        db.add(ModuleSetting(key="production_control.v07", value_text="migrated"))
+    db.commit()
 
 
 def upgrade_schema(db: Session) -> None:

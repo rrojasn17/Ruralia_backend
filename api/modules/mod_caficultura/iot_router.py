@@ -116,7 +116,7 @@ def _integration_or_404(db: Session, integration_id: int) -> IoTIntegration:
 
 def _integration_by_key_or_404(db: Session, integration_key: str) -> IoTIntegration:
     row = (
-        _integration_query(db)
+        db.query(IoTIntegration)
         .filter(IoTIntegration.integration_key == integration_key)
         .first()
     )
@@ -340,16 +340,35 @@ def _flatten_numeric(
         number = _numeric(value)
         if number is not None:
             out[source_key] = number
-        elif isinstance(value, dict) and depth < 1:
+        elif isinstance(value, dict) and depth < 7:
             out.update(_flatten_numeric(value, source_key, depth + 1))
+        elif isinstance(value, list) and depth < 7:
+            for index, item in enumerate(value[:IOT_MAX_VARIABLES]):
+                path = f"{source_key}.{index}"
+                number = _numeric(item)
+                if number is not None:
+                    out[path] = number
+                elif isinstance(item, dict):
+                    out.update(_flatten_numeric(item, path, depth + 1))
+                if len(out) >= IOT_MAX_VARIABLES:
+                    break
         if len(out) >= IOT_MAX_VARIABLES:
             break
-    return out
+    return dict(list(out.items())[:IOT_MAX_VARIABLES])
 
 
 def _source_value(payload: dict[str, Any], source_key: str) -> Any:
+    # A literal key containing a dot takes precedence over a nested path.
+    if source_key in payload:
+        return payload[source_key]
     current: Any = payload
     for part in source_key.split("."):
+        if isinstance(current, list) and part.isdigit():
+            index = int(part)
+            if index >= len(current):
+                return None
+            current = current[index]
+            continue
         if not isinstance(current, dict) or part not in current:
             return None
         current = current[part]
@@ -379,6 +398,39 @@ def _map_payload(node: IoTNode, raw_data: dict[str, Any]) -> dict[str, float | i
     if config != (node.variables_config or {}):
         node.variables_config = config
     return mapped
+
+
+def _ttn_decoded_data(raw_data: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    """Adapt Seeed's documented messages envelope without treating IDs as readings.
+
+    Measurement IDs, rather than array positions, keep fragmented or reordered
+    SenseCAP uplinks assigned to the same variable. The original JSON is retained
+    in raw_payload. Flat Dragino/custom decoder payloads pass through unchanged.
+    """
+    messages = raw_data.get("messages")
+    if not isinstance(messages, list) or not any(key in raw_data for key in ("valid", "err", "payload")):
+        return raw_data, None
+    if raw_data.get("valid") is False or raw_data.get("err") not in (None, 0, "0", ""):
+        return {}, "decoder_error"
+    data = {key: value for key, value in raw_data.items() if key not in ("messages", "valid", "err", "errMessage", "payload")}
+    measurements: dict[str, Any] = {}
+    for message in messages[:IOT_MAX_VARIABLES]:
+        if not isinstance(message, dict):
+            continue
+        measurement_id = str(message.get("measurementId", ""))
+        if message.get("type") == "report_telemetry" and re.fullmatch(r"\d{1,10}", measurement_id):
+            channel = message.get("channel")
+            key = f"ch{channel}_{measurement_id}" if isinstance(channel, int) else measurement_id
+            value = _numeric(message.get("measurementValue"))
+            if value is not None:
+                measurements[key] = value
+        elif message.get("type") == "upload_battery":
+            value = _numeric(message.get("battery"))
+            if value is not None:
+                data["battery"] = value
+    if measurements:
+        data["sensecap"] = measurements
+    return data, None
 
 
 def _record_reading(
@@ -432,7 +484,7 @@ def _record_reading(
     db.add(row)
     try:
         db.commit()
-    except IntegrityError as exc:
+    except IntegrityError:
         db.rollback()
         if event_id:
             existing = (
@@ -445,7 +497,9 @@ def _record_reading(
             )
             if existing:
                 return existing, dict(existing.data or {}), True
-        raise HTTPException(status_code=409, detail="La lectura ya existe") from exc
+        # Only the verified (node, event) conflict above is a duplicate. Other
+        # constraint failures must remain server errors so the sender can retry.
+        raise
     db.refresh(row)
     return row, mapped, False
 
@@ -479,15 +533,19 @@ def _ttn_event_id(payload: dict[str, Any], dev_eui: str) -> str | None:
     session_key_id = str(uplink.get("session_key_id") or "").strip()
     frame_counter = uplink.get("f_cnt")
     if session_key_id and frame_counter is not None:
-        return f"ttn:{dev_eui}:{session_key_id}:{frame_counter}"[:180]
-
-    correlation_ids = payload.get("correlation_ids") or []
-    if correlation_ids:
-        return f"ttn:{dev_eui}:{str(correlation_ids[0])}"[:180]
+        key = f"ttn:{dev_eui}:{session_key_id}:{frame_counter}"
+        return key if len(key) <= 180 else f"ttn:{dev_eui}:sha256:{hashlib.sha256(key.encode()).hexdigest()}"
 
     received_at = payload.get("received_at") or uplink.get("received_at")
     if received_at:
-        return f"ttn:{dev_eui}:{received_at}"[:180]
+        key = f"ttn:{dev_eui}:{received_at}"
+        return key if len(key) <= 180 else f"ttn:{dev_eui}:sha256:{hashlib.sha256(key.encode()).hexdigest()}"
+    # Connection/RPC correlation IDs can be shared by many different uplinks.
+    correlation_ids = payload.get("correlation_ids") or []
+    for correlation in correlation_ids:
+        if isinstance(correlation, str) and correlation.startswith(("as:up:", "ns:uplink:", "gs:uplink:")):
+            key = f"ttn:{dev_eui}:{correlation}"
+            return key if len(key) <= 180 else f"ttn:{dev_eui}:sha256:{hashlib.sha256(key.encode()).hexdigest()}"
     return None
 
 
@@ -669,6 +727,8 @@ def get_node_status(
     raw_data = {}
     if latest and isinstance(latest.raw_payload, dict):
         raw_data = (latest.raw_payload.get("uplink_message") or {}).get("decoded_payload") or {}
+        if isinstance(raw_data, dict):
+            raw_data, _ = _ttn_decoded_data(raw_data)
     if not raw_data and latest:
         raw_data = latest.data or {}
     return {
@@ -680,6 +740,7 @@ def get_node_status(
         "latest_source": latest.source if latest else None,
         "latest_values": dict(latest.data or {}) if latest else {},
         "latest_source_keys": _ttn_source_keys(raw_data) if isinstance(raw_data, dict) else [],
+        "last_ingest": node.ingest_diagnostics,
     }
 
 
@@ -1121,6 +1182,29 @@ def _ignored_ttn_uplink(reason: str, did: str, application_id: str, integration_
     return result
 
 
+def _validate_ttn_envelope(payload: dict[str, Any]) -> None:
+    identifiers = payload.get("end_device_ids")
+    if not isinstance(identifiers, dict) or not isinstance(identifiers.get("application_ids", {}), dict):
+        raise HTTPException(status_code=422, detail="end_device_ids debe contener identificadores JSON válidos")
+    if "uplink_message" in payload and not isinstance(payload["uplink_message"], dict):
+        raise HTTPException(status_code=422, detail="uplink_message debe ser un objeto JSON")
+    if not isinstance(payload.get("correlation_ids", []), list):
+        raise HTTPException(status_code=422, detail="correlation_ids debe ser una lista")
+
+
+def _ttn_diagnostic(payload: dict[str, Any], application_id: str) -> dict[str, Any]:
+    uplink = payload.get("uplink_message") or {}
+    decoded = uplink.get("decoded_payload")
+    return {
+        "received_at": utcnow().isoformat(),
+        "application_id": application_id,
+        "status": "success",
+        "reason": None,
+        "decoded_keys": [str(key)[:120] for key in decoded][:IOT_MAX_VARIABLES] if isinstance(decoded, dict) else [],
+        "f_cnt": uplink.get("f_cnt") if isinstance(uplink.get("f_cnt"), int) else None,
+    }
+
+
 def _ingest_ttn_for_node(
     db: Session,
     node: IoTNode,
@@ -1129,29 +1213,55 @@ def _ingest_ttn_for_node(
     application_id: str,
     integration: IoTIntegration | None = None,
 ) -> dict[str, Any]:
-    if not node.activo:
-        return _ignored_ttn_uplink("sensor_inactive", did, application_id, integration.id if integration else None)
+    diagnostic = _ttn_diagnostic(payload, application_id)
+    node.ingest_diagnostics = diagnostic
+    if integration is not None:
+        integration.last_seen_at = utcnow()
 
-    raw_data = (payload.get("uplink_message") or {}).get("decoded_payload") or {}
+    def ignored(reason: str) -> dict[str, Any]:
+        node.ingest_diagnostics = {**diagnostic, "status": "ignored", "reason": reason}
+        db.commit()
+        return _ignored_ttn_uplink(reason, did, application_id, integration.id if integration else None)
+
+    if not node.activo:
+        return ignored("sensor_inactive")
+    if "uplink_message" not in payload:
+        return ignored("not_uplink")
+
+    raw_data = payload["uplink_message"].get("decoded_payload")
+    if raw_data is None:
+        return ignored("no_numeric_decoded_payload")
     if not isinstance(raw_data, dict):
         raise HTTPException(
             status_code=422, detail="uplink_message.decoded_payload debe ser un objeto JSON"
         )
+    raw_data, reason = _ttn_decoded_data(raw_data)
+    if reason:
+        return ignored(reason)
     if not _flatten_numeric(raw_data):
-        return _ignored_ttn_uplink("no_numeric_decoded_payload", did, application_id, integration.id if integration else None)
+        return ignored("no_numeric_decoded_payload")
 
-    row, mapped, duplicate = _record_reading(
-        db,
-        node,
-        raw_data=raw_data,
-        recorded_at=_parse_ttn_timestamp(payload),
-        source="ttn",
-        source_event_id=_ttn_event_id(payload, did),
-        raw_payload=payload,
-    )
-    if integration is not None:
-        integration.last_seen_at = utcnow()
+    try:
+        row, mapped, duplicate = _record_reading(
+            db,
+            node,
+            raw_data=raw_data,
+            recorded_at=_parse_ttn_timestamp(payload),
+            source="ttn",
+            source_event_id=_ttn_event_id(payload, did),
+            raw_payload=payload,
+        )
+    except HTTPException as exc:
+        if exc.status_code != 422:
+            raise
+        return ignored("no_mapped_numeric_variables")
+    if duplicate:
+        node.ingest_diagnostics = {**diagnostic, "status": "duplicate"}
         db.commit()
+    logger.info(
+        "TTN uplink processed: status=%s dev_eui=%r application_id=%r reading_id=%s",
+        "duplicate" if duplicate else "success", did, application_id, row.id if row else None,
+    )
     return {
         "status": "duplicate" if duplicate else "success",
         "reading_id": row.id if row else None,
@@ -1178,13 +1288,8 @@ async def ingest_ttn_integration(
     if not _validate_ttn_secret(x_ttn_webhook_secret, integration.webhook_secret_hash):
         raise HTTPException(status_code=403, detail="Secreto TTN inválido")
 
-    enforce_rate_limit(
-        request,
-        f"iot-ttn-ingest:{integration.id}",
-        IOT_INGEST_RATE_LIMIT_PER_MINUTE,
-        60,
-    )
     _ensure_ingest_payload_size(payload)
+    _validate_ttn_envelope(payload)
     identifiers = payload.get("end_device_ids") or {}
     raw_did = identifiers.get("dev_eui")
     if not raw_did:
@@ -1198,10 +1303,12 @@ async def ingest_ttn_integration(
     if not application_id:
         raise HTTPException(status_code=422, detail="TTN no envió application_id")
     if integration.application_id and application_id != integration.application_id:
+        logger.warning("TTN application mismatch: dev_eui=%r application_id=%r integration_id=%s", did, application_id, integration.id)
         raise HTTPException(
             status_code=403,
             detail="El Application ID del uplink no coincide con esta integración",
         )
+    enforce_rate_limit(request, f"iot-ttn-ingest:{integration.id}:{did}", IOT_INGEST_RATE_LIMIT_PER_MINUTE, 60)
 
     node = (
         _node_query(db)
@@ -1210,6 +1317,8 @@ async def ingest_ttn_integration(
             IoTNode.tipo == "ttn",
             IoTNode.integration_id == integration.id,
         )
+        .populate_existing()
+        .with_for_update()
         .first()
     )
     if not node:
@@ -1240,8 +1349,8 @@ async def ingest_ttn_legacy(
         x_ttn_webhook_secret, IOT_TTN_WEBHOOK_SECRET
     ):
         raise HTTPException(status_code=403, detail="Secreto TTN inválido")
-    enforce_rate_limit(request, "iot-ttn-ingest:legacy", IOT_INGEST_RATE_LIMIT_PER_MINUTE, 60)
     _ensure_ingest_payload_size(payload)
+    _validate_ttn_envelope(payload)
 
     identifiers = payload.get("end_device_ids") or {}
     raw_did = identifiers.get("dev_eui")
@@ -1252,6 +1361,8 @@ async def ingest_ttn_legacy(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    enforce_rate_limit(request, f"iot-ttn-ingest:legacy:{did}", IOT_INGEST_RATE_LIMIT_PER_MINUTE, 60)
+
     node = (
         _node_query(db)
         .filter(
@@ -1259,6 +1370,8 @@ async def ingest_ttn_legacy(
             IoTNode.tipo == "ttn",
             IoTNode.integration_id.is_(None),
         )
+        .populate_existing()
+        .with_for_update()
         .first()
     )
     if not node:

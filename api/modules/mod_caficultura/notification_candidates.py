@@ -136,7 +136,7 @@ def detect_critical_ot_alerts(db: Session, now: datetime, managers: list[int]) -
                     "horas_desde_ultima_actividad": round((now - _latest_ot_activity(row)).total_seconds() / 3600, 1),
                 },
                 recipient_user_ids=recipients,
-                recommended_action="Revise el lote, confirme la causa de la alerta y registre la acción correctiva en NAVIA.",
+                recommended_action="Revise el lote, confirme la causa de la alerta y registre la acción correctiva en ruralIA.",
                 cooldown_hours=NOTIFICATION_ALERT_COOLDOWN_HOURS,
                 force_send=True,
             )

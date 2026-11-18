@@ -270,7 +270,7 @@ def test_agent_uses_read_tools_and_returns_verified_metric_cards(db_session, mon
                     call_id="call-business-overview",
                 )
                 return SimpleNamespace(output=[tool_call], output_text="")
-            return SimpleNamespace(output=[], output_text="Resumen verificado con datos de NAVIA.")
+            return SimpleNamespace(output=[], output_text="Resumen verificado con datos de ruralIA.")
 
     fake_responses = FakeResponses()
     monkeypatch.setattr("modules.mod_caficultura.ai_agent.openai_is_configured", lambda: True)
@@ -281,7 +281,7 @@ def test_agent_uses_read_tools_and_returns_verified_metric_cards(db_session, mon
 
     assistant = process_message(db_session, conversation, user, user_message, request_id="test-tool-call")
     db_session.commit()
-    assert assistant.content == "Resumen verificado con datos de NAVIA."
+    assert assistant.content == "Resumen verificado con datos de ruralIA."
     assert assistant.meta["tool_names"] == ["get_business_metric"]
     assert assistant.meta["metric_cards"][0]["metric"] == "business_overview"
     assert fake_responses.calls == 2

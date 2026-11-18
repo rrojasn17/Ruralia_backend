@@ -13,8 +13,8 @@ from security import generar_token, hash_token, hashear_contrasena, verificar_co
 CORE_ROLE_PERMISSIONS = {
     # Solo perfiles realmente globales. Los perfiles de industria los aporta el
     # manifiesto del módulo activo. Roles desconocidos quedan sin permisos core (default deny).
-    "admin": ["core:dashboard:view", "core:users:manage", "core:config:manage"],
-    "gerente": ["core:dashboard:view"],
+    "admin": ["core:dashboard:view"],
+    "gerente": ["core:dashboard:view", "core:users:manage", "core:config:manage"],
     "operario": ["core:dashboard:view"],
     "trabajador": [],
 }
@@ -65,6 +65,12 @@ def core_permissions_for_user(user: Usuario) -> list[str]:
         return ["*"]
     base = CORE_ROLE_PERMISSIONS.get((user.rol or "operario").lower(), [])
     explicit = [str(p).strip() for p in (getattr(user, "permisos", None) or []) if str(p).strip()]
+    role = str(user.rol or "").strip().lower()
+    # Global user/configuration access follows the hierarchy, even for old grants.
+    protected = {"*", "core:users:manage", "core:config:manage"}
+    explicit = [p for p in explicit if p not in protected]
+    if role == "trabajador":
+        return []
     return sorted(set(base + explicit))
 
 
@@ -116,6 +122,9 @@ def bootstrap_core(
     sync_admin_password: bool = False,
 ) -> None:
     _ensure_user_columns(db)
+    brand = db.query(ConfiguracionSistema).filter(ConfiguracionSistema.clave == "app_name").first()
+    if brand and str(brand.valor or "").strip().casefold() in {"navia", "ruralia"}:
+        brand.valor = "ruralIA"
     set_config(db, "session_days", str(session_days), "Duración de sesión en días")
 
     admin = db.query(Usuario).filter(Usuario.correo == admin_email).first()

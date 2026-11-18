@@ -24,7 +24,7 @@ from modules.mod_caficultura.ai_agent import ensure_default_agent
 from modules.mod_caficultura.ai_farm_agent import process_farm_message
 
 
-logger = logging.getLogger("navia-api.ai-farm")
+logger = logging.getLogger("ruralia-api.ai-farm")
 router = APIRouter(prefix="/ai/farms", tags=["ai-farm"])
 
 
